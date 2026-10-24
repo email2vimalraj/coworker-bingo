@@ -15,11 +15,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Coworker Bingo",
   description: "Get to know your coworkers: scan, confirm, and fill your bingo card.",
+  appleWebApp: { capable: true, title: "Coworker Bingo" },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
   themeColor: "#4f46e5",
 };
 

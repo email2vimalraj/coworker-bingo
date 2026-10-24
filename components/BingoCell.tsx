@@ -34,11 +34,11 @@ export function BingoCell({
       aria-label={`${cell.prompt ?? ""}${sub ? `, ${sub}` : ""}`}
       className={`flex aspect-square min-h-11 min-w-0 flex-col items-stretch justify-between overflow-hidden rounded-lg border-2 p-1 text-left leading-tight transition-transform active:scale-95 ${tone} ${selected ? "ring-2 ring-accent" : ""}`}
     >
-      <span className="line-clamp-4 break-words text-[10px] font-semibold sm:text-xs">
+      <span className="line-clamp-4 break-words text-[11px] font-semibold sm:text-xs">
         {cell.prompt}
       </span>
       {sub ? (
-        <span className="line-clamp-2 break-words text-[9px] font-bold sm:text-[11px]">{sub}</span>
+        <span className="line-clamp-2 break-words text-[10px] font-bold sm:text-[11px]">{sub}</span>
       ) : cell.last_outcome ? (
         <span className="text-[9px] font-bold text-red-600 sm:text-[11px]">Try again</span>
       ) : null}

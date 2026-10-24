@@ -14,7 +14,7 @@ const FALLBACK_MS = 10000;
 
 /**
  * Loads a session with its leaderboard, pending count and latest confirmed claims.
- * Realtime (players + claims for this session) triggers refetches throttled to one per 2s;
+ * Realtime (players + claims for this session, plus UPDATE on the session row for Start/End) triggers refetches throttled to one per 2s;
  * a 10s timer is the fallback.
  */
 export function useSessionDashboard(sessionId: string) {
@@ -22,6 +22,7 @@ export function useSessionDashboard(sessionId: string) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [pending, setPending] = useState(0);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [offsetMs, setOffsetMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const lastRun = useRef(0);
@@ -31,7 +32,8 @@ export function useSessionDashboard(sessionId: string) {
     lastRun.current = Date.now();
     try {
       const sb = getSupabase();
-      const [s, lb, pend, act] = await Promise.all([
+      const t0 = Date.now();
+      const [s, lb, pend, act, sn] = await Promise.all([
         sb.from("sessions").select("*").eq("id", sessionId).maybeSingle(),
         sb.rpc("session_leaderboard", { p_session_id: sessionId }),
         sb
@@ -39,22 +41,19 @@ export function useSessionDashboard(sessionId: string) {
           .select("id", { count: "exact", head: true })
           .eq("session_id", sessionId)
           .eq("status", "pending"),
-        sb
-          .from("claims")
-          .select(
-            "id, cell_index, resolved_at, created_at, player:players!claims_player_id_fkey(full_name), coworker:players!claims_coworker_id_fkey(full_name)",
-          )
-          .eq("session_id", sessionId)
-          .eq("status", "confirmed")
-          .order("resolved_at", { ascending: false })
-          .limit(20),
+        sb.rpc("session_activity", { p_session_id: sessionId, p_limit: 20 }),
+        sb.rpc("server_now"),
       ]);
+      if (!sn.error && typeof sn.data === "string") {
+        // Same as players: server time minus the local time at the midpoint of the request.
+        setOffsetMs(new Date(sn.data).getTime() - (t0 + Date.now()) / 2);
+      }
       if (s.error) throw s.error;
       if (lb.error) throw lb.error;
       setSession((s.data as SessionRow | null) ?? null);
       setRows((lb.data as LeaderboardRow[] | null) ?? []);
       setPending(pend.count ?? 0);
-      setActivity((act.data as unknown as ActivityItem[] | null) ?? []);
+      setActivity((act.data as ActivityItem[] | null) ?? []);
       setError(null);
     } catch (e) {
       setError(friendlyError(e));
@@ -87,6 +86,11 @@ export function useSessionDashboard(sessionId: string) {
         { event: "*", schema: "public", table: "claims", filter: `session_id=eq.${sessionId}` },
         requestLoad,
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` },
+        () => void load(),
+      )
       .subscribe();
     const fallback = window.setInterval(() => void load(), FALLBACK_MS);
     return () => {
@@ -99,5 +103,5 @@ export function useSessionDashboard(sessionId: string) {
     };
   }, [sessionId, load, requestLoad]);
 
-  return { session, rows, pending, activity, error, loading, reload: load };
+  return { session, rows, pending, activity, offsetMs, error, loading, reload: load };
 }

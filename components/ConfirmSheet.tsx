@@ -37,7 +37,7 @@ export function ConfirmSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-900/50" role="dialog" aria-modal="true">
-      <div className="animate-sheet-up mx-auto w-full max-w-md rounded-t-3xl bg-white p-5 pb-8 shadow-2xl">
+      <div className="animate-sheet-up mx-auto w-full max-w-md rounded-t-3xl bg-white p-5 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-2xl">
         {queue.length > 1 ? (
           <p className="mb-2 text-sm font-semibold text-accent">{queue.length - 1} more waiting</p>
         ) : null}

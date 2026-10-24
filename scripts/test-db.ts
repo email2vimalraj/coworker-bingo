@@ -321,6 +321,86 @@ async function main() {
   });
   ok("end_session");
 
+  // --- stage 3: security hardening
+  {
+    // every SECURITY DEFINER function pins search_path
+    const unpinned = await q("select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and (p.proconfig is null or not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%'))");
+    assert.deepEqual(unpinned, []);
+    // RLS on for every public table
+    const noRls = await q("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity");
+    assert.deepEqual(noRls, []);
+    // anon has no table privileges at all
+    const anonTbl = await q("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and (has_table_privilege('anon', c.oid, 'select,insert,update,delete') or exists (select 1 from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and has_column_privilege('anon', c.oid, a.attnum, 'select')))");
+    assert.deepEqual(anonTbl, []);
+    // admin RPCs and internals are not executable by anon / public
+    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[])", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
+    for (const f of adminFns) {
+      const r = await q("select has_function_privilege('anon', $1::regprocedure, 'execute') as a, has_function_privilege('public', $1::regprocedure, 'execute') as p", [f]);
+      assert.deepEqual(r[0], { a: false, p: false }, f);
+    }
+    ok("security: search_path pinned, RLS on, anon has no table/admin-function access");
+
+    // player_token is not readable by authenticated admins either, nor present in any output
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("permission denied", q("select player_token from players"));
+      await expectErr("permission denied", q("select * from players"));
+      assert.ok((await q("select id, full_name, email from players")).length > 0);
+    });
+    const tokens = (await q("select player_token::text as t from players")).map((r) => String(r.t));
+    const pollJson = JSON.stringify(await poll(A)) + JSON.stringify(await poll(many[0]));
+    const lbJson = JSON.stringify(await as("authenticated", ADMIN, () => q("select * from session_leaderboard($1)", [sid])));
+    for (const t of tokens) {
+      assert.ok(!pollJson.includes(t) && !lbJson.includes(t), "token leaked");
+    }
+    // a poll shows only the caller's own token-derived data; the join result is the only place a token appears
+    ok("player_token never appears in poll/leaderboard output or admin table reads");
+
+    // input limits
+    await expectErr("INVALID_INPUT", join("x".repeat(81), "long-name@example.com"));
+    await expectErr("INVALID_INPUT", join("Ok", `${"a".repeat(250)}@example.com`));
+    await join("y".repeat(80), "max-name@example.com").catch((e) => {
+      // session may be ended at this point; only the length check matters
+      assert.ok(String(e.message).includes("SESSION_ENDED") || String(e.message).includes("EMAIL"));
+    });
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("INVALID_INPUT", rpc("create_session", ["S", 300, "correct_then_time", false, 1, 1, [...prompts.slice(0, 23), "p".repeat(121)]]));
+    });
+    ok("input length limits (name 80, email 254, prompt 120)");
+
+    // server_now + session_activity (admin only), activity carries prompt text
+    await expectErr("permission denied", as("anon", null, () => q("select server_now()")));
+    await as("authenticated", OTHER_USER, async () => {
+      await expectErr("NOT_ADMIN", q("select * from session_activity($1, 5)", [sid]));
+    });
+    await as("authenticated", ADMIN, async () => {
+      const sn = await q("select server_now() as n");
+      assert.ok(Math.abs(new Date(String(sn[0].n)).getTime() - Date.now()) < 60_000);
+      const act = await q("select * from session_activity($1, 5)", [sid]);
+      assert.ok(act.length > 0 && act.length <= 5);
+      assert.ok(act.every((a) => /^Prompt \d+$/.test(String(a.prompt)) && a.player_name && a.coworker_name));
+    });
+    ok("server_now and session_activity (with prompt text) are admin-only");
+
+    // concurrency safety nets: unique index blocks a double-filled cell; confirmations respect the per-coworker limit
+    const s3 = await as("authenticated", ADMIN, async () => {
+      const r = await rpc("create_session", ["G3", 300, "correct_then_time", false, 1, 1, prompts]);
+      await rpc("start_session", [r.id]);
+      return r;
+    });
+    const X = await join("Xena", "xena@example.com", s3.code as string);
+    const Y = await join("Yuri", "yuri@example.com", s3.code as string);
+    await q("insert into claims(session_id, player_id, coworker_id, cell_index) values ($1,$2,$3,0)", [s3.id, X.player_id, Y.player_id]);
+    await expectErr("claims_one_active_per_cell", q("insert into claims(session_id, player_id, coworker_id, cell_index) values ($1,$2,$3,0)", [s3.id, X.player_id, Y.player_id]));
+    // two pending claims to the same coworker (as if a race slipped through) cannot both be confirmed
+    await q("insert into claims(session_id, player_id, coworker_id, cell_index) values ($1,$2,$3,1)", [s3.id, X.player_id, Y.player_id]);
+    const pend = await q("select id from claims where player_id=$1 order by cell_index", [X.player_id]);
+    assert.equal((await respond(Y, pend[0].id, true)).status, "confirmed");
+    await expectErr("COWORKER_LIMIT", respond(Y, pend[1].id, true));
+    assert.equal((await respond(Y, pend[1].id, false)).status, "rejected");
+    assert.equal(Number((await q("select count(*) as n from claims where player_id=$1 and status='confirmed'", [X.player_id]))[0].n), 1);
+    ok("per-coworker limit and one-active-claim-per-cell hold at confirmation time");
+  }
+
   // --- delete cascades
   await as("authenticated", ADMIN, async () => {
     await q("delete from sessions where id=$1", [sid]);

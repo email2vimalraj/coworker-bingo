@@ -51,7 +51,7 @@ create table session_prompts (
 create table players (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references sessions (id) on delete cascade,
-  full_name text not null check (char_length(btrim(full_name)) between 1 and 100),
+  full_name text not null check (char_length(btrim(full_name)) between 1 and 80),
   email citext not null check (char_length(email::text) <= 254),
   player_code text not null,
   player_token uuid not null default gen_random_uuid(),
@@ -221,7 +221,7 @@ declare
   v_attempt int := 0;
   v_cn text;
 begin
-  if v_name = '' or char_length(v_name) > 100 then
+  if v_name = '' or char_length(v_name) > 80 then
     raise exception 'INVALID_INPUT' using detail = 'full_name';
   end if;
   if v_email = '' or char_length(v_email) > 254
@@ -458,9 +458,14 @@ begin
   if not found then raise exception 'INVALID_TOKEN'; end if;
   if p_accept is null then raise exception 'INVALID_INPUT' using detail = 'accept'; end if;
 
-  select * into v_claim from claims where id = p_claim_id for update;
+  -- Lock order is always scanner (players row) then claim, same as create_claim and
+  -- submit_board, so concurrent confirmations for one scanner serialize without deadlock.
+  select * into v_claim from claims where id = p_claim_id;
   if not found then raise exception 'CLAIM_NOT_FOUND'; end if;
   if v_claim.coworker_id <> v_me.id then raise exception 'NOT_YOURS'; end if;
+  select * into v_scanner from players where id = v_claim.player_id for update;
+  select * into v_claim from claims where id = p_claim_id for update;
+  if not found then raise exception 'CLAIM_NOT_FOUND'; end if;
 
   select * into v_session from sessions where id = v_claim.session_id;
   if v_session.status = 'ended' then raise exception 'SESSION_ENDED'; end if;
@@ -474,7 +479,6 @@ begin
   end if;
 
   if p_accept then
-    select * into v_scanner from players where id = v_claim.player_id for update;
     if v_scanner.submitted_at is not null then raise exception 'ALREADY_SUBMITTED'; end if;
     if exists (select 1 from claims where player_id = v_claim.player_id
                and cell_index = v_claim.cell_index and id <> v_claim.id
@@ -483,7 +487,7 @@ begin
     end if;
     select count(*) into v_count from claims
     where player_id = v_claim.player_id and coworker_id = v_claim.coworker_id
-      and id <> v_claim.id and status in ('pending', 'confirmed');
+      and id <> v_claim.id and status = 'confirmed';
     if v_count + 1 > v_session.max_squares_per_coworker then
       raise exception 'COWORKER_LIMIT';
     end if;
@@ -506,6 +510,7 @@ declare
 begin
   select * into v_me from players where player_token = p_token;
   if not found then raise exception 'INVALID_TOKEN'; end if;
+  perform 1 from players where id = v_me.id for update;
   select * into v_claim from claims where id = p_claim_id for update;
   if not found then raise exception 'CLAIM_NOT_FOUND'; end if;
   if v_claim.player_id <> v_me.id then raise exception 'NOT_YOURS'; end if;
@@ -662,6 +667,36 @@ begin
 end;
 $$;
 
+-- Server clock for admin timers (players get server_now from player_poll).
+create function server_now() returns timestamptz
+language sql stable set search_path = public as $$ select now(); $$;
+
+-- Latest confirmed claims with the prompt text, for the admin activity feed.
+create function session_activity(p_session_id uuid, p_limit int default 20)
+returns table (
+  id uuid,
+  cell_index int,
+  player_name text,
+  coworker_name text,
+  prompt text,
+  resolved_at timestamptz
+)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not is_admin() then raise exception 'NOT_ADMIN'; end if;
+  return query
+    select c.id, c.cell_index, p.full_name, cw.full_name, sp.text, c.resolved_at
+    from claims c
+    join players p on p.id = c.player_id
+    join players cw on cw.id = c.coworker_id
+    left join boards b on b.player_id = c.player_id and b.cell_index = c.cell_index
+    left join session_prompts sp on sp.id = b.prompt_id
+    where c.session_id = p_session_id and c.status = 'confirmed'
+    order by c.resolved_at desc nulls last
+    limit least(greatest(coalesce(p_limit, 20), 1), 100);
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- RLS: anon gets nothing; admins get everything via is_admin().
 -- ---------------------------------------------------------------------------
@@ -689,8 +724,12 @@ create policy claims_admin on claims for all to authenticated
 -- Grants
 -- ---------------------------------------------------------------------------
 revoke all on all tables in schema public from anon, authenticated;
-grant select, insert, update, delete on sessions, session_prompts, players, boards, claims
+grant select, insert, update, delete on sessions, session_prompts, boards, claims
   to authenticated;
+-- players: no access to player_token (a bearer secret) for anyone but its owner,
+-- admins included. Admins can read everything else and delete; rows are created by join_session.
+grant select (id, session_id, full_name, email, player_code, joined_at, submitted_at),
+  delete on players to authenticated;
 grant select on admins to authenticated;
 
 revoke execute on all functions in schema public from public, anon, authenticated;
@@ -707,6 +746,8 @@ grant execute on function create_session(text, int, ranking_mode, boolean, int, 
 grant execute on function start_session(uuid) to authenticated;
 grant execute on function end_session(uuid) to authenticated;
 grant execute on function session_leaderboard(uuid) to authenticated;
+grant execute on function session_activity(uuid, int) to authenticated;
+grant execute on function server_now() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Realtime (admin dashboard only); skipped where the publication doesn't exist.
@@ -716,5 +757,6 @@ begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     alter publication supabase_realtime add table players;
     alter publication supabase_realtime add table claims;
+    alter publication supabase_realtime add table sessions;
   end if;
 end $$;

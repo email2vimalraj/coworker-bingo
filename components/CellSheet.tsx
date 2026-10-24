@@ -65,7 +65,7 @@ export function CellSheet({
       aria-modal="true"
     >
       <div
-        className="animate-sheet-up mx-auto max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-8 shadow-2xl"
+        className="animate-sheet-up mx-auto max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <p className="text-sm font-semibold text-slate-500">Find someone who...</p>

@@ -7,11 +7,12 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
       {items.map((a) => (
         <li key={a.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
           <span className="min-w-0 break-words">
-            <span className="font-semibold">{a.player?.full_name ?? "Someone"}</span> met{" "}
-            <span className="font-semibold">{a.coworker?.full_name ?? "a coworker"}</span>
+            <span className="font-semibold">{a.player_name}</span> found{" "}
+            <span className="font-semibold">{a.coworker_name}</span>
+            {a.prompt ? <span className="text-slate-600">: {a.prompt}</span> : null}
           </span>
           <time className="shrink-0 text-xs text-slate-500">
-            {new Date(a.resolved_at ?? a.created_at).toLocaleTimeString([], {
+            {new Date(a.resolved_at ?? Date.now()).toLocaleTimeString([], {
               hour: "numeric",
               minute: "2-digit",
               second: "2-digit",

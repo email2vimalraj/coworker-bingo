@@ -28,13 +28,13 @@ function Stat({ label, value }: { label: string; value: number }) {
 export default function SessionDashboard() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { session, rows, pending, activity, error, loading, reload } = useSessionDashboard(id);
+  const { session, rows, pending, activity, offsetMs, error, loading, reload } = useSessionDashboard(id);
   const [origin, setOrigin] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const remaining = useCountdown(session?.ends_at ?? null, 0);
+  const remaining = useCountdown(session?.ends_at ?? null, offsetMs);
 
   useEffect(() => setOrigin(getAppOrigin()), []);
 
@@ -51,7 +51,7 @@ export default function SessionDashboard() {
     );
   }
 
-  const status = effectiveStatus(session);
+  const status = effectiveStatus(session, Date.now() + offsetMs);
   const url = origin ? joinUrl(origin, session.code) : "";
 
   async function action(name: "start_session" | "end_session") {

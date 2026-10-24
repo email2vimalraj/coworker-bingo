@@ -103,8 +103,8 @@ export interface SessionListItem extends SessionRow {
 export interface ActivityItem {
   id: string;
   cell_index: number;
+  player_name: string;
+  coworker_name: string;
+  prompt: string | null;
   resolved_at: string | null;
-  created_at: string;
-  player: { full_name: string } | null;
-  coworker: { full_name: string } | null;
 }

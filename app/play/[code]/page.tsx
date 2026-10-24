@@ -169,7 +169,7 @@ export default function PlayPage() {
         </Link>
       </header>
       {toastEl}
-      <main className="space-y-3 p-2 pb-10">
+      <main className="space-y-3 p-2 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
         {submitted ? (
           <div className="rounded-xl bg-indigo-100 p-3 text-center text-sm font-semibold text-indigo-900">
             Board submitted! Waiting for the game to end. Keep confirming coworkers&apos; requests.
