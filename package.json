@@ -10,7 +10,12 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "test:db": "tsx scripts/test-db.ts",
-    "load-test": "tsx scripts/load-test.ts"
+    "load-test": "tsx scripts/load-test.ts",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "local:admin": "tsx scripts/local-admin.ts",
+    "e2e:local": "tsx scripts/e2e-local.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -32,6 +37,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
+    "supabase": "^2.122.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",

@@ -37,9 +37,34 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 3. Deploy. Then go back to Supabase > Authentication > URL Configuration: set **Site URL** to the production URL and add `https://<your-app>.vercel.app/**` (and any preview/custom domain you use) under **Redirect URLs**.
 4. Open `/admin/login`, sign in, create a session, open **Present** on the projector.
 
-### 3. Local development
+### 3. Local development (fully local, no cloud account needed)
 
-Copy `.env.local.example` to `.env.local`, fill in the same three variables (`NEXT_PUBLIC_APP_URL=http://localhost:3000`), then `npm install && npm run dev`.
+Needs Docker running (allow it a few GB of free disk). The Supabase CLI comes from `devDependencies`.
+
+```bash
+npm install
+npm run db:start      # starts local Supabase in Docker; applies the migration + seed (demo session DEMO23)
+npm run local:admin   # creates admin@local.test / admin12345 (optional args: email password)
+```
+
+Create `.env.local` with the values `npm run db:start` prints (the local keys are the same public defaults for everyone):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<ANON_KEY from db:start>
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+Then `npm run dev` and open http://localhost:3000.
+
+| Command | What it does |
+|---|---|
+| `npm run e2e:local` | 37 end-to-end checks against the local Supabase: every RPC, security rules, realtime, ranking, delete |
+| `npm run load-test -- --session DEMO23 --players 450 --minutes 2` | 450 simulated players (start the session in the admin UI while it waits) |
+| `npm run db:reset` | wipe the local DB and re-apply migration + seed (then re-run `npm run local:admin`) |
+| `npm run db:stop` | stop the Docker containers |
+
+Local extras: Supabase Studio (browse tables) at http://127.0.0.1:54323.
 
 ## Testing on localhost
 
