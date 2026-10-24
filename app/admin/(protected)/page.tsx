@@ -21,10 +21,7 @@ export default function AdminHome() {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await getSupabase()
-      .from("sessions")
-      .select("*, players(count)")
-      .order("created_at", { ascending: false });
+    const { data, error: err } = await getSupabase().rpc("admin_sessions");
     if (err) setError(friendlyError(err));
     else {
       setError(null);
@@ -69,7 +66,7 @@ export default function AdminHome() {
                       </Link>
                       <p className="text-sm text-slate-500">
                         <span className="font-mono font-semibold">{s.code}</span> &middot; created{" "}
-                        {formatDate(s.created_at)} &middot; {s.players?.[0]?.count ?? 0} players
+                        {formatDate(s.created_at)} &middot; {Number(s.player_count)} {Number(s.player_count) === 1 ? "player" : "players"}
                       </p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${STATUS_STYLE[status]}`}>

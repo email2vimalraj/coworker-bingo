@@ -11,7 +11,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run `supabase/migrations/0001_init.sql`, then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Run it on a fresh project; the file is not idempotent.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql`, then `0002_admin_sessions_list.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Run them on a fresh project; they are not idempotent.
 3. Authentication > Providers: make sure **Email** is enabled. For a small admin team, turn off "Allow new users to sign up" (Authentication > Sign In / Providers) so only users you create can log in.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
@@ -59,7 +59,7 @@ Then `npm run dev` and open http://localhost:3000.
 
 | Command | What it does |
 |---|---|
-| `npm run e2e:local` | 37 end-to-end checks against the local Supabase: every RPC, security rules, realtime, ranking, delete |
+| `npm run e2e:local` | 39 end-to-end checks against the local Supabase: every RPC, security rules, realtime, ranking, delete |
 | `npm run load-test -- --session DEMO23 --players 450 --minutes 2` | 450 simulated players (start the session in the admin UI while it waits) |
 | `npm run db:reset` | wipe the local DB and re-apply migration + seed (then re-run `npm run local:admin`) |
 | `npm run db:stop` | stop the Docker containers |

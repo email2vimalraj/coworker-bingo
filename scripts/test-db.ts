@@ -4,7 +4,7 @@
  * Run: npm run test:db
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join as pjoin } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { citext } from "@electric-sql/pglite/contrib/citext";
@@ -65,7 +65,10 @@ interface Poll {
 
 async function main() {
   await db.exec(STUB);
-  await db.exec(readFileSync(pjoin(root, "supabase/migrations/0001_init.sql"), "utf8"));
+  const migDir = pjoin(root, "supabase/migrations");
+  for (const f of readdirSync(migDir).filter((n) => n.endsWith(".sql")).sort()) {
+    await db.exec(readFileSync(pjoin(migDir, f), "utf8"));
+  }
   await db.exec(readFileSync(pjoin(root, "supabase/seed.sql"), "utf8"));
   await q("insert into auth.users(id) values ($1), ($2)", [ADMIN, OTHER_USER]);
   await q("insert into admins(user_id) values ($1)", [ADMIN]);

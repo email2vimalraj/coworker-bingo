@@ -164,6 +164,10 @@ async function main() {
   check("admin can't read player tokens", !!tokenRead.error, tokenRead.data);
   const adminRead = await admin.from("players").select("id, full_name, email").eq("session_id", sessionId);
   check("admin can read player list", (adminRead.data ?? []).length === 3, adminRead.error);
+  const list = await rpc<{ id: string; player_count: number }[]>(admin, "admin_sessions");
+  check("admin sessions list shows 3 players", Number(list.data?.find((s) => s.id === sessionId)?.player_count) === 3, list.error ?? list.data);
+  const anonList = await rpc(anon, "admin_sessions");
+  check("anon can't list sessions", !!anonList.error, anonList.error);
 
   // ---- Leaderboard / activity ----
   type Row = { full_name: string; correct: number; rank: number | null; is_winner: boolean; prize_rank: number | null };

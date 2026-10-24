@@ -96,9 +96,11 @@ export interface LeaderboardRow {
   prize_rank: number | null;
 }
 
-export interface SessionListItem extends SessionRow {
-  players: { count: number }[];
-}
+/** Row from the admin_sessions() RPC. */
+export type SessionListItem = Pick<
+  SessionRow,
+  "id" | "code" | "name" | "status" | "duration_seconds" | "started_at" | "ends_at" | "ended_at" | "created_at"
+> & { player_count: number };
 
 export interface ActivityItem {
   id: string;

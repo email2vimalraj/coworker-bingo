@@ -32,7 +32,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      {/* Browser extensions (e.g. ColorZilla) add attributes to <body>; ignore those mismatches. */}
       <body
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
