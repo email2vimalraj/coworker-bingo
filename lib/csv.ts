@@ -1,0 +1,51 @@
+import type { LeaderboardRow } from "@/lib/supabase/types";
+import { formatDuration } from "@/lib/useCountdown";
+
+function cell(v: string | number | boolean | null): string {
+  let s = v === null ? "" : String(v);
+  // Guard against spreadsheet formula injection from player-entered text.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export function leaderboardCsv(rows: LeaderboardRow[]): string {
+  const header = [
+    "Rank",
+    "Name",
+    "Email",
+    "Correct",
+    "Time (mm:ss)",
+    "Submitted at",
+    "Eligible to win",
+    "Winner",
+    "Prize rank",
+  ];
+  const lines = rows.map((r) =>
+    [
+      r.rank,
+      r.full_name,
+      r.email,
+      r.correct,
+      formatDuration(r.elapsed_seconds),
+      r.submitted_at,
+      r.eligible ? "yes" : "no",
+      r.is_winner ? "yes" : "no",
+      r.prize_rank,
+    ]
+      .map(cell)
+      .join(","),
+  );
+  return [header.map(cell).join(","), ...lines].join("\r\n");
+}
+
+export function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

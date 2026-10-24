@@ -4,7 +4,7 @@
  *
  * - correct   = confirmed squares (0-24)
  * - elapsed   = submittedAt - startedAt, else the full duration
- * - eligible  = can win. With requireFullCard or mode full_card_fastest only 24/24 boards.
+ * - eligible  = can win: needs at least 1 confirmed square. With requireFullCard or mode full_card_fastest only 24/24 boards.
  * - rank      = competition rank by correct desc, elapsed asc (ties share a rank).
  *               In full_card_fastest only 24/24 boards are ranked (others get null).
  * - isWinner  = eligible and within the first `winnersCount` eligible players
@@ -59,7 +59,7 @@ export function rankPlayers(players: RankingPlayer[], cfg: RankingConfig): Ranke
     return {
       p,
       elapsed,
-      eligible: fullOnly ? p.correct === FULL_CARD : true,
+      eligible: p.correct >= 1 && (fullOnly ? p.correct === FULL_CARD : true),
       ranked: cfg.mode === "full_card_fastest" ? p.correct === FULL_CARD : true,
     };
   });

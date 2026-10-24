@@ -85,4 +85,18 @@ describe("rankPlayers", () => {
     const r = rankPlayers([player("a", 3, 1), player("b", 4, null)], cfg());
     expect(ids(r)).toEqual(["b", "a"]);
   });
+
+  it("players with 0 confirmed squares are never eligible or winners", () => {
+    const ps = [player("z", 0, 5), player("a", 2, 100), player("y", 0, null)];
+    for (const mode of ["correct_then_time", "full_card_fastest"] as const) {
+      const r = rankPlayers(ps, cfg({ mode, winnersCount: 10 }));
+      for (const x of r.filter((x) => x.correct === 0)) {
+        expect(x.eligible).toBe(false);
+        expect(x.isWinner).toBe(false);
+        expect(x.prizeRank).toBeNull();
+      }
+    }
+    const r = rankPlayers(ps, cfg({ winnersCount: 10 }));
+    expect(r.filter((x) => x.isWinner).map((x) => x.id)).toEqual(["a"]);
+  });
 });

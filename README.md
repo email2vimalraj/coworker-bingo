@@ -40,7 +40,7 @@ Errors are raised as the exception message: `INVALID_INPUT`, `EMAIL_TAKEN`, `SES
 
 ## Ranking
 
-See `lib/ranking.ts` (identical to the SQL `_leaderboard`): correct squares desc, then elapsed asc (non-submitters get the full duration); `full_card_fastest` ranks only 24/24 boards; `require_full_card` limits winners to 24/24; ties share a rank; `joined_at` is the final ordering tiebreak.
+See `lib/ranking.ts` (identical to the SQL `_leaderboard`): correct squares desc, then elapsed asc (non-submitters get the full duration); `full_card_fastest` ranks only 24/24 boards; `require_full_card` limits winners to 24/24; a player needs at least 1 confirmed square to be eligible to win in every mode; ties share a rank; `joined_at` is the final ordering tiebreak.
 
 ## Tests
 

@@ -147,7 +147,7 @@ $$;
 -- Rules (mirrored in lib/ranking.ts):
 --   correct   = confirmed claims made by the player
 --   elapsed   = submitted_at - started_at, else full duration_seconds
---   eligible  = can win: correct = 24 if require_full_card or mode full_card_fastest
+--   eligible  = can win: correct >= 1, and correct = 24 if require_full_card or mode full_card_fastest
 --   rank      = competition rank (ties share) by correct desc, elapsed asc;
 --               in full_card_fastest only 24/24 boards are ranked (others null)
 --   is_winner = eligible and position (correct desc, elapsed asc, joined_at) <= winners_count
@@ -180,8 +180,9 @@ language sql stable set search_path = public as $$
   ),
   flagged as (
     select b.*,
-      case when b.require_full_card or b.ranking_mode = 'full_card_fastest'
-           then b.correct = 24 else true end as eligible,
+      (b.correct >= 1 and
+       case when b.require_full_card or b.ranking_mode = 'full_card_fastest'
+            then b.correct = 24 else true end) as eligible,
       case when b.ranking_mode = 'full_card_fastest'
            then b.correct = 24 else true end as ranked
     from base b

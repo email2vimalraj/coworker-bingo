@@ -271,6 +271,7 @@ async function main() {
 
   const configs: { mode: RankingMode; full: boolean; winners: number }[] = [
     { mode: "correct_then_time", full: false, winners: 3 },
+    { mode: "correct_then_time", full: false, winners: 20 },
     { mode: "correct_then_time", full: true, winners: 3 },
     { mode: "full_card_fastest", full: false, winners: 2 },
     { mode: "full_card_fastest", full: true, winners: 10 },
@@ -297,6 +298,7 @@ async function main() {
       assert.equal(row.is_winner, e.isWinner, `${label} winner`);
       assert.equal(row.prize_rank, e.prizeRank, `${label} prize`);
     });
+    assert.ok(lb.filter((r) => r.correct === 0).every((r) => !r.eligible && !r.is_winner && r.prize_rank === null), "0-correct never wins");
     ok(`leaderboard matches lib/ranking.ts (${cfg.mode}, require_full_card=${cfg.full}, winners=${cfg.winners})`);
   }
   // spot-check semantics: 4.5 min beats 4.9 min
