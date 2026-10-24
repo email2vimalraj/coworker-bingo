@@ -4,7 +4,7 @@ A mobile-friendly "get to know your coworker" bingo for live events (450+ player
 
 Players join a session by scanning a QR code, then fill squares by scanning coworkers who match a prompt. The coworker confirms on their own phone. Admins create sessions (time limit, ranking rules, winners), watch a live dashboard, and can delete sessions.
 
-Players need no login: joining returns a secret `player_token` kept in localStorage, and every player action is a `SECURITY DEFINER` Postgres RPC called directly from the browser with the anon key. Phones poll `player_poll(token)` about every 3s.
+Players need no login: joining returns a secret `player_token` kept in localStorage, and every player action is a `SECURITY DEFINER` Postgres RPC called directly from the browser with the anon key. Phones poll `player_poll(token)` every 3s, and every 1s while showing their own QR or waiting for a coworker's answer (see `lib/pollInterval.ts`).
 
 ## Deploy guide (Supabase + Vercel)
 
@@ -80,7 +80,7 @@ npm run load-test -- --url https://STAGING.supabase.co --anon-key ANON_KEY \
   --session ABC123 --players 450 --minutes 5
 ```
 
-It joins N fake players (`loadtest+i@example.com`), polls `player_poll` every ~3s with jitter, makes claims on random open cells against random other players (targets accept ~80% on their next poll) and submits near the end. It prints per-RPC counts, p50/p95/p99 latency, and a histogram of error codes. Business errors like `COWORKER_LIMIT` or `CELL_TAKEN` are normal; watch for `NETWORK:*` / `HTTP/*` errors and p95 above ~500ms.
+It joins N fake players (`loadtest+i@example.com`), polls `player_poll` every ~3s with jitter (`--poll-ms 1000` simulates the 1s worst case), makes claims on random open cells against random other players (targets accept ~80% on their next poll) and submits near the end. It prints per-RPC counts, p50/p95/p99 latency, and a histogram of error codes. Business errors like `COWORKER_LIMIT` or `CELL_TAKEN` are normal; watch for `NETWORK:*` / `HTTP/*` errors and p95 above ~500ms.
 
 Steps: create a session in the admin UI on the **staging** project, run the script (it joins first, then waits), press **Start** in the admin UI while it runs, and let it finish. Optional flags: `--poll-ms`, `--claim-every-s`.
 
@@ -99,7 +99,7 @@ Steps: create a session in the admin UI on the **staging** project, run the scri
 
 ## Known limitations
 
-- Supabase Free caps realtime at about 200 concurrent connections, so players do **not** use realtime; they poll `player_poll` about every 3s (slower in the lobby and after submitting). Only admin screens (dashboard and present) use realtime, with a 10s polling fallback.
+- Supabase Free caps realtime at about 200 concurrent connections, so players do **not** use realtime; they poll `player_poll` every 3s, every 1s while their QR is on screen or a scan awaits an answer, and every 10s after submitting. Worst case (all 450 at 1s, `--poll-ms 1000`) ran locally at p95 6ms; re-check on the hosted project. Only admin screens (dashboard and present) use realtime, with a 10s polling fallback.
 - A player's identity is a secret token in their browser; clearing site data or switching browsers means they cannot get back into the same player (they cannot rejoin with the same email either; an admin can delete the player row).
 - Supabase Free allows no point-in-time recovery; export results at the end.
 

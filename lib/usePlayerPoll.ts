@@ -3,9 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { playerApi } from "@/lib/api";
 import { errorCodeOf } from "@/lib/errors";
 import type { PollResponse } from "@/lib/supabase/types";
+import { intervalFor } from "@/lib/pollInterval";
 
-const FAST_MS = 3000;
-const SLOW_MS = 10000;
 
 export interface PollState {
   data: PollResponse | null;
@@ -18,10 +17,13 @@ export interface PollState {
 }
 
 /**
- * Polls player_poll: every 3s while the game is live and the board isn't submitted,
- * every 10s otherwise. Pauses while the tab is hidden. `refresh()` fetches immediately.
+ * Polls player_poll while the game is live and the board isn't submitted:
+ * every 1s when `boost` is on (my QR is on screen, so I'm likely being scanned) or when I have a
+ * pending claim (waiting for a coworker's answer), otherwise every 3s. Every 3s in the lobby,
+ * every 10s after submitting and after the game ends. Pauses while the tab is hidden.
+ * `refresh()` fetches immediately.
  */
-export function usePlayerPoll(token: string | null): PollState {
+export function usePlayerPoll(token: string | null, boost = false): PollState {
   const [data, setData] = useState<PollResponse | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -32,6 +34,8 @@ export function usePlayerPoll(token: string | null): PollState {
   const schedule = useRef<() => void>(() => {});
   const tokenRef = useRef(token);
   tokenRef.current = token;
+  const boostRef = useRef(boost);
+  boostRef.current = boost;
 
   const doPoll = useCallback(async () => {
     const t = tokenRef.current;
@@ -73,11 +77,10 @@ export function usePlayerPoll(token: string | null): PollState {
       clear();
       if (cancelled || document.hidden) return;
       const d = dataRef.current;
-      const fast = d && d.session.status === "live" && !d.me.submitted_at;
       timer.current = window.setTimeout(async () => {
         await doPoll();
         next();
-      }, fast ? FAST_MS : SLOW_MS);
+      }, intervalFor(d, boostRef.current));
     };
     schedule.current = next;
 
@@ -97,6 +100,11 @@ export function usePlayerPoll(token: string | null): PollState {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [token, doPoll]);
+
+  // Switching boost on shouldn't wait out the rest of a 3s or 10s timer.
+  useEffect(() => {
+    if (boost) schedule.current();
+  }, [boost]);
 
   const refresh = useCallback(async () => {
     // A poll already in flight may predate the action; wait for it, then fetch fresh.

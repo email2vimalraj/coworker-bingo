@@ -1,5 +1,12 @@
 "use client";
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import { playerApi } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
@@ -19,6 +26,17 @@ interface PlayerContextValue {
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
+const BoostContext = createContext<((delta: number) => void) | null>(null);
+
+/** While the calling component is mounted, poll every 1s (used by the player's own QR). */
+export function usePollBoost(): void {
+  const change = useContext(BoostContext);
+  useEffect(() => {
+    if (!change) return;
+    change(1);
+    return () => change(-1);
+  }, [change]);
+}
 
 export function usePlayer(): PlayerContextValue {
   const v = useContext(PlayerContext);
@@ -30,10 +48,20 @@ export function usePlayer(): PlayerContextValue {
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const params = useParams<{ code: string }>();
   const router = useRouter();
-  const sessionCode = normalizeSessionCode(params.code ?? "") ?? (params.code ?? "").toUpperCase();
+  const sessionCode =
+    normalizeSessionCode(params.code ?? "") ??
+    (params.code ?? "").toUpperCase();
   const [token, setToken] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
-  const { data, errorCode, failed, offset, refresh } = usePlayerPoll(token);
+  const [boosters, setBoosters] = useState(0);
+  const changeBoost = useCallback(
+    (delta: number) => setBoosters((n) => n + delta),
+    [],
+  );
+  const { data, errorCode, failed, offset, refresh } = usePlayerPoll(
+    token,
+    boosters > 0,
+  );
 
   useEffect(() => {
     const stored = loadPlayer(sessionCode);
@@ -66,7 +94,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-3 p-4">
         {failed && errorCode !== "INVALID_TOKEN" ? (
           <p className="text-center text-slate-600">
-            {errorCode ? friendlyError(new Error(errorCode)) : "Can't reach the server. Retrying..."}
+            {errorCode
+              ? friendlyError(new Error(errorCode))
+              : "Can't reach the server. Retrying..."}
           </p>
         ) : (
           <Spinner />
@@ -76,14 +106,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <PlayerContext.Provider value={{ sessionCode, token, data, offset, refresh }}>
-      {failed ? (
-        <div className="bg-amber-100 px-3 py-1 text-center text-sm font-medium text-amber-900">
-          Connection problem, retrying...
-        </div>
-      ) : null}
-      {children}
-      <ConfirmSheet incoming={data.incoming} onRespond={respond} />
-    </PlayerContext.Provider>
+    <BoostContext.Provider value={changeBoost}>
+      <PlayerContext.Provider
+        value={{ sessionCode, token, data, offset, refresh }}
+      >
+        {failed ? (
+          <div className="bg-amber-100 px-3 py-1 text-center text-sm font-medium text-amber-900">
+            Connection problem, retrying...
+          </div>
+        ) : null}
+        {children}
+        <ConfirmSheet incoming={data.incoming} onRespond={respond} />
+      </PlayerContext.Provider>
+    </BoostContext.Provider>
   );
 }

@@ -4,6 +4,7 @@ import { getAppOrigin } from "@/lib/appUrl";
 import { playerQrUrl } from "@/lib/codes";
 import { QRCode } from "@/components/QRCode";
 import { CopyButton } from "@/components/CopyButton";
+import { usePollBoost } from "@/components/PlayerProvider";
 
 /** The player's own QR + text code + copy button. */
 export function MyQr({
@@ -17,6 +18,7 @@ export function MyQr({
   size?: number;
   big?: boolean;
 }) {
+  usePollBoost(); // someone is probably scanning me: check for their request every 1s
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(getAppOrigin()), []);
   return (
