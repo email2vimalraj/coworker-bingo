@@ -11,7 +11,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql`, then `0002_admin_sessions_list.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Run them on a fresh project; they are not idempotent.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0011_review_fixes.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
 3. Authentication > Providers: make sure **Email** is enabled. For a small admin team, turn off "Allow new users to sign up" (Authentication > Sign In / Providers) so only users you create can log in.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
