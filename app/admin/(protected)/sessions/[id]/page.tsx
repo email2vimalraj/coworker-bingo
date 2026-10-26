@@ -13,6 +13,8 @@ import { ActivityFeed } from "@/components/ActivityFeed";
 import { CopyButton } from "@/components/CopyButton";
 import { DeleteSessionDialog } from "@/components/DeleteSessionDialog";
 import { Leaderboard } from "@/components/Leaderboard";
+import { PlayerAdminSheet } from "@/components/PlayerAdminSheet";
+import type { LeaderboardRow } from "@/lib/supabase/types";
 import { QRCode } from "@/components/QRCode";
 import { Button, Card, ErrorBox, Spinner } from "@/components/ui";
 
@@ -34,6 +36,7 @@ export default function SessionDashboard() {
   const [busy, setBusy] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [managed, setManaged] = useState<LeaderboardRow | null>(null);
   const remaining = useCountdown(session?.ends_at ?? null, offsetMs);
 
   useEffect(() => setOrigin(getAppOrigin()), []);
@@ -194,7 +197,14 @@ export default function SessionDashboard() {
             Export CSV
           </Button>
         </div>
-        <Leaderboard rows={rows} />
+        <Leaderboard rows={rows} onManage={setManaged} />
+        {managed ? (
+          <PlayerAdminSheet
+            player={managed}
+            onClose={() => setManaged(null)}
+            onChanged={() => void reload()}
+          />
+        ) : null}
       </Card>
 
       <Card className="p-0">

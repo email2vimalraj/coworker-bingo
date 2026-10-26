@@ -90,7 +90,7 @@ async function main() {
   // ---- Players ----
   const anon = newClient();
   const join = (name: string, email: string) =>
-    rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: code.toLowerCase(), p_full_name: name, p_email: email });
+    rpc<{ player_id: string; player_token: string; player_code: string }>(anon, "join_session", { p_code: code.toLowerCase(), p_full_name: name, p_email: email });
 
   const a = await join("Alex Anders", "alex@example.com");
   const b = await join("Priya Patel", "priya@example.com");
@@ -187,6 +187,22 @@ async function main() {
   check("end_session", !ended.error, ended.error);
   const final = await poll(b.data.player_token);
   check("ended poll returns result (rank 1, winner)", final.session.status === "ended" && final.result?.rank === 1 && final.result.is_winner, final.result);
+
+  // ---- Item 4: admin player controls ----
+  {
+    const sq = await rpc<{ claim_id: string; cell_index: number; coworker_name: string }[]>(admin, "admin_player_squares", { p_player_id: a.data.player_id });
+    check("admin_player_squares lists A's confirmed square", !sq.error && sq.data.length >= 1, sq);
+    const anonDenied = await rpc(anon, "admin_remove_player", { p_player_id: a.data.player_id });
+    check("anon cannot call admin_remove_player", !!anonDenied.error, anonDenied);
+    const rv = await rpc<{ status: string }>(admin, "admin_revoke_claim", { p_claim_id: sq.data[0].claim_id });
+    check("admin_revoke_claim", !rv.error && rv.data.status === "revoked", rv);
+    const after = await poll(a.data.player_token);
+    check("revoked square reopens on A's board", after.board[sq.data[0].cell_index].status === null, after.board[sq.data[0].cell_index]);
+    const rm = await rpc<{ removed: boolean; squares_lost_by_others: number }>(admin, "admin_remove_player", { p_player_id: c.data.player_id });
+    check("admin_remove_player", !rm.error && rm.data.removed === true, rm);
+    const gonePoll = await rpc(anon, "player_poll", { p_token: c.data.player_token });
+    check("removed player's poll gets INVALID_TOKEN", gonePoll.error?.includes("INVALID_TOKEN") ?? false, gonePoll.error);
+  }
 
   await sleep(1500);
   console.log(`  realtime events seen: players=${events.players} claims=${events.claims} sessions=${events.sessions}`);

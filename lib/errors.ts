@@ -18,6 +18,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   NOT_ADMIN: "Your account is not an admin. Ask an owner to add you to the admins table.",
   PROMPT_COUNT: "A session needs exactly 24 prompts.",
   ALREADY_STARTED: "This session has already started.",
+  PLAYER_NOT_FOUND: "That player no longer exists. They may have already been removed.",
   CODE_GENERATION_FAILED: "Couldn't generate a unique code. Please try again.",
 };
 

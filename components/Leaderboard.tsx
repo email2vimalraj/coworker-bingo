@@ -6,10 +6,13 @@ export function Leaderboard({
   rows,
   showEmail = true,
   big = false,
+  onManage,
 }: {
   rows: LeaderboardRow[];
   showEmail?: boolean;
   big?: boolean;
+  /** When set, each row gets a "Manage" button. */
+  onManage?: (row: LeaderboardRow) => void;
 }) {
   if (rows.length === 0) {
     return <p className="p-4 text-slate-500">No players yet.</p>;
@@ -27,6 +30,7 @@ export function Leaderboard({
             <th className={pad}>Correct</th>
             <th className={pad}>Time</th>
             <th className={pad}>Status</th>
+            {onManage ? <th className={pad}></th> : null}
           </tr>
         </thead>
         <tbody>
@@ -54,6 +58,17 @@ export function Leaderboard({
                   </span>
                 ) : null}
               </td>
+              {onManage ? (
+                <td className={pad}>
+                  <button
+                    type="button"
+                    onClick={() => onManage(r)}
+                    className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                  >
+                    Manage
+                  </button>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

@@ -412,6 +412,68 @@ async function main() {
   assert.deepEqual(left[0], { p: 0, c: 0 });
   ok("delete cascades");
 
+  // ---- Item 4: Admin player controls (remove player, revoke square) ----
+  {
+    const s4 = await as("authenticated", ADMIN, async () => {
+      const r = await rpc("create_session", ["Item4", 300, "correct_then_time", false, 1, 1, prompts]);
+      await rpc("start_session", [r.id]);
+      return r;
+    });
+    const X = await join("Xi", "xi4@example.com", s4.code as string);
+    const Y = await join("Yo", "yo4@example.com", s4.code as string);
+    const Z = await join("Zed", "zed4@example.com", s4.code as string);
+    const cl = async (p: Joined, cell: number, cw: Joined) => {
+      const r = await claim(p, cell, cw.player_code);
+      return (await respond(cw, r.claim_id, true)).status;
+    };
+    assert.equal(await cl(X, 0, Y), "confirmed");
+    assert.equal(await cl(X, 1, Z), "confirmed");
+    assert.equal(await cl(Y, 3, X), "confirmed");
+    const lbOf = (id: unknown) =>
+      as("authenticated", ADMIN, async () =>
+        (await q("select player_id, correct from session_leaderboard($1)", [id])).find((r) => r.player_id === X.player_id));
+    assert.equal((await lbOf(s4.id))?.correct, 2);
+
+    // permissions
+    for (const [fn, arg] of [["admin_remove_player", X.player_id], ["admin_player_squares", X.player_id], ["admin_revoke_claim", crypto.randomUUID()]]) {
+      await as("authenticated", OTHER_USER, async () => { await expectErr("NOT_ADMIN", q(`select ${fn}($1)`, [arg])); });
+      await expectErr("permission denied", as("anon", null, () => q(`select ${fn}($1)`, [arg])));
+    }
+
+    const sq = await as("authenticated", ADMIN, () => q("select * from admin_player_squares($1)", [X.player_id]));
+    assert.equal(sq.length, 2);
+    assert.deepEqual(sq.map((r) => [r.cell_index, r.coworker_name]).sort(), [[0, "Yo"], [1, "Zed"]]);
+    assert.ok(sq.every((r) => /^Prompt \d+$/.test(String(r.prompt)) && r.claim_id && r.resolved_at));
+
+    // revoke: score drops, cell reopens, coworker allowance is freed
+    const revokeId = sq.find((r) => r.cell_index === 0)!.claim_id;
+    const rv = await as("authenticated", ADMIN, () => rpc("admin_revoke_claim", [revokeId]));
+    assert.equal(rv.status, "revoked");
+    await as("authenticated", ADMIN, async () => { await expectErr("CLAIM_NOT_PENDING", rpc("admin_revoke_claim", [revokeId])); });
+    await as("authenticated", ADMIN, async () => { await expectErr("CLAIM_NOT_FOUND", rpc("admin_revoke_claim", [crypto.randomUUID()])); });
+    assert.equal((await lbOf(s4.id))?.correct, 1);
+    const xp = (await as("anon", null, () => rpc("player_poll", [X.player_token]))) as unknown as Poll;
+    assert.equal(xp.board[0].status, null);
+    assert.equal(xp.me.correct, 1);
+    assert.equal(await cl(X, 0, Y), "confirmed"); // same coworker, same cell again
+    assert.equal((await lbOf(s4.id))?.correct, 2);
+    ok("admin_revoke_claim reopens the cell, frees the coworker allowance and drops the score");
+
+    // remove: warns about squares this person confirmed for others, cascades both ways
+    assert.equal(Number((await as("authenticated", ADMIN, () => q("select admin_player_impact($1) as n", [Z.player_id])))[0].n), 1);
+    const rm = await as("authenticated", ADMIN, () => rpc("admin_remove_player", [Z.player_id]));
+    assert.deepEqual(rm, { removed: true, squares_lost_by_others: 1 });
+    await as("authenticated", ADMIN, async () => { await expectErr("PLAYER_NOT_FOUND", rpc("admin_remove_player", [Z.player_id])); });
+    assert.equal((await lbOf(s4.id))?.correct, 1);
+    await expectErr("INVALID_TOKEN", as("anon", null, () => rpc("player_poll", [Z.player_token])));
+    const rm2 = await as("authenticated", ADMIN, () => rpc("admin_remove_player", [Y.player_id]));
+    assert.equal(rm2.squares_lost_by_others, 1);
+    assert.equal(Number((await q("select count(*) as n from claims where player_id=$1 or coworker_id=$1", [Y.player_id]))[0].n), 0);
+    const re = await join("Zed", "zed4@example.com", s4.code as string);
+    assert.ok(re.player_token);
+    ok("admin_remove_player cascades, reports lost squares, invalidates the token, allows rejoin");
+  }
+
   console.log(`\n${passed} checks passed`);
 }
 
