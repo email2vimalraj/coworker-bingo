@@ -52,3 +52,8 @@ Before calling a change done: typecheck, lint, `npm test`, `npm run test:db`; pl
 - **Realtime warm-up:** after `SUBSCRIBED`, `postgres_changes` needs a few seconds before events flow. Tests must wait (`e2e-local.ts` waits 6s).
 - **Mobile first:** layouts must work at 375px wide. Tap targets need to be at least 44px (`min-h-11`), inputs at least 16px (`text-base`) so iOS doesn't zoom, and bottom sheets need safe-area padding. The camera scanner needs HTTPS, so on localhost test with the copy-paste player code.
 - **Free-plan limits:** keep player traffic on Supabase RPCs, not Vercel functions, to stay within Vercel Hobby. Re-run the load test on the hosted project after any change to polling or `player_poll`.
+
+## Agents (`.claude/agents/`)
+
+- `implementer` (Sonnet): default for coding tasks. Runs the full check suite before reporting.
+- `db-reviewer` (read-only): run it after any migration, RPC or ranking change, before committing or deploying.
