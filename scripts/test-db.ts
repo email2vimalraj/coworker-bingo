@@ -336,7 +336,7 @@ async function main() {
     const anonTbl = await q("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and (has_table_privilege('anon', c.oid, 'select,insert,update,delete') or exists (select 1 from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and has_column_privilege('anon', c.oid, a.attnum, 'select')))");
     assert.deepEqual(anonTbl, []);
     // admin RPCs and internals are not executable by anon / public
-    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[])", "_normalize_domains(text[])", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
+    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[])", "_normalize_domains(text[])", "update_session(uuid,text,int,ranking_mode,boolean,int,int,text[],text[])", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
     for (const f of adminFns) {
       const r = await q("select has_function_privilege('anon', $1::regprocedure, 'execute') as a, has_function_privilege('public', $1::regprocedure, 'execute') as p", [f]);
       assert.deepEqual(r[0], { a: false, p: false }, f);
@@ -591,6 +591,48 @@ async function main() {
     assert.deepEqual(oi.allowed_email_domains, []);
     await as("anon", null, () => rpc("join_session", [open.code, "Anyone", "any@gmail.com"]));
     ok("allowed email domains: normalized, exact-match enforced, join info, empty = any");
+  }
+
+  // ---- Item 3: edit a session before it starts ----
+  {
+    const sess3 = await as("authenticated", ADMIN, () => rpc("create_session", ["Edit me", 300, "correct_then_time", false, 1, 1, prompts]));
+    const E = await as("anon", null, () => rpc("join_session", [sess3.code, "Eve", "eve@example.com"]) as unknown as Promise<Joined>);
+    const idsBefore = await q("select id, position from session_prompts where session_id=$1 order by position", [sess3.id]);
+    const boardBefore = await q("select cell_index, prompt_id from boards where player_id=$1 order by 1", [E.player_id]);
+    const newPrompts = prompts.map((p) => `${p} edited`);
+    const upd = (id: unknown, ps = newPrompts, name = "Renamed") =>
+      rpc("update_session", [id, name, 900, "full_card_fastest", true, 2, 3, ["acme.com"], ps]);
+    await as("anon", null, async () => {
+      await expectErr("permission denied", upd(sess3.id));
+    });
+    await as("authenticated", OTHER_USER, async () => {
+      await expectErr("NOT_ADMIN", upd(sess3.id));
+    });
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("SESSION_NOT_FOUND", upd(crypto.randomUUID()));
+      await expectErr("PROMPT_COUNT", upd(sess3.id, newPrompts.slice(0, 23)));
+      await expectErr("INVALID_INPUT", upd(sess3.id, [...newPrompts.slice(0, 23), " "]));
+      await expectErr("INVALID_INPUT", upd(sess3.id, newPrompts, " "));
+      await expectErr("INVALID_INPUT", rpc("update_session", [sess3.id, "X", 10, "correct_then_time", false, 1, 1, [], newPrompts]));
+      await expectErr("INVALID_INPUT", rpc("update_session", [sess3.id, "X", 300, "correct_then_time", false, 1, 1, ["bad@domain"], newPrompts]));
+      await upd(sess3.id);
+    });
+    const row = (await q("select name, duration_seconds, ranking_mode::text as m, require_full_card, winners_count, max_squares_per_coworker, allowed_email_domains from sessions where id=$1", [sess3.id]))[0];
+    assert.deepEqual(row, { name: "Renamed", duration_seconds: 900, m: "full_card_fastest", require_full_card: true, winners_count: 2, max_squares_per_coworker: 3, allowed_email_domains: ["acme.com"] });
+    const idsAfter = await q("select id, position, text from session_prompts where session_id=$1 order by position", [sess3.id]);
+    assert.deepEqual(idsAfter.map((r) => [r.id, r.position]), idsBefore.map((r) => [r.id, r.position]));
+    assert.ok(idsAfter.every((r) => String(r.text).endsWith(" edited")));
+    const boardAfter = await q("select cell_index, prompt_id from boards where player_id=$1 order by 1", [E.player_id]);
+    assert.deepEqual(boardAfter, boardBefore);
+    const ep = await as("anon", null, () => rpc("player_poll", [E.player_token]) as unknown as Promise<Poll>);
+    assert.ok(ep.board.filter((c) => !c.is_free).every((c) => String(c.prompt).endsWith(" edited")));
+    await as("authenticated", ADMIN, async () => {
+      await rpc("start_session", [sess3.id]);
+      await expectErr("ALREADY_STARTED", upd(sess3.id));
+      await rpc("end_session", [sess3.id]);
+      await expectErr("ALREADY_STARTED", upd(sess3.id));
+    });
+    ok("update_session: lobby only, prompts updated in place (ids and boards stay valid), validation");
   }
 
   console.log(`\n${passed} checks passed`);

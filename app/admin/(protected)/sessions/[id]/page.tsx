@@ -138,6 +138,14 @@ export default function SessionDashboard() {
                 Finalize
               </Button>
             ) : null}
+            {status === "lobby" && session.status === "lobby" ? (
+              <Link
+                href={`/admin/sessions/${id}/edit`}
+                className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 font-semibold"
+              >
+                Edit
+              </Link>
+            ) : null}
             <Link
               href={`/admin/sessions/${id}/present`}
               target="_blank"

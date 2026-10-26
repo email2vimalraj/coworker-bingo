@@ -258,6 +258,29 @@ async function main() {
     await admin.from("sessions").delete().eq("id", dom.data.id);
   }
 
+  // ---- Item 3: edit a session before it starts ----
+  {
+    const base = {
+      p_name: "E2E edit", p_duration_seconds: 300, p_ranking_mode: "correct_then_time",
+      p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 1,
+      p_prompts: DEFAULT_PROMPTS.slice(0, 24),
+    };
+    const ed = await rpc<{ id: string; code: string }>(admin, "create_session", base);
+    const upd = await rpc(admin, "update_session", {
+      p_session_id: ed.data.id, ...base, p_name: "E2E edited", p_duration_seconds: 600,
+      p_allowed_email_domains: ["acme.com"], p_prompts: DEFAULT_PROMPTS.slice(0, 24).map((p) => `${p}!`),
+    });
+    check("update_session in lobby", !upd.error, upd.error);
+    const row = await admin.from("sessions").select("name, duration_seconds, allowed_email_domains").eq("id", ed.data.id).single();
+    check("update_session saved fields", row.data?.name === "E2E edited" && row.data.duration_seconds === 600 && row.data.allowed_email_domains?.[0] === "acme.com", row.data);
+    const anonUpd = await rpc(anon, "update_session", { p_session_id: ed.data.id, ...base, p_allowed_email_domains: [] });
+    check("anon can't update_session", !!anonUpd.error, anonUpd.error);
+    await rpc(admin, "start_session", { p_session_id: ed.data.id });
+    const late2 = await rpc(admin, "update_session", { p_session_id: ed.data.id, ...base, p_allowed_email_domains: [] });
+    check("update_session after start rejected (ALREADY_STARTED)", late2.error?.includes("ALREADY_STARTED") ?? false, late2.error);
+    await admin.from("sessions").delete().eq("id", ed.data.id);
+  }
+
   const del = await admin.from("sessions").delete().eq("id", sessionId);
   const gone = await admin.from("players").select("id").eq("session_id", sessionId);
   check("delete session cascades", !del.error && (gone.data ?? []).length === 0, del.error);

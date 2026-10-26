@@ -80,6 +80,14 @@ export default function AdminHome() {
                     >
                       Open
                     </Link>
+                    {status === "lobby" ? (
+                      <Link
+                        href={`/admin/sessions/${s.id}/edit`}
+                        className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 font-semibold"
+                      >
+                        Edit
+                      </Link>
+                    ) : null}
                     <Button variant="ghost" onClick={() => setDeleting(deleting === s.id ? null : s.id)}>
                       Delete
                     </Button>
