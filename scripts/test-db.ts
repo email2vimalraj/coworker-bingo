@@ -542,6 +542,10 @@ async function main() {
     assert.equal(stats.squares.distribution.length, 7);
     assert.deepEqual(stats.squares.distribution.map((d: Row) => d.players), [2, 2, 0, 0, 0, 0, 0]);
     assert.equal(Number(stats.timing.avg_elapsed_seconds), 100);
+    // a 30s pause before Pia submitted is excluded (migration 0010)
+    await q("insert into session_pauses(session_id, started_at, ended_at) select id, started_at + interval '10 seconds', started_at + interval '40 seconds' from sessions where id=$1", [stId]);
+    const paused = (await as("authenticated", ADMIN, () => rpc("session_stats", [stId]))) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    assert.equal(Number(paused.timing.avg_elapsed_seconds), 70);
     assert.equal(stats.timing.fastest_full_card, null);
     assert.equal(stats.prompts.length, 24);
     assert.equal(stats.prompts.reduce((n: number, p: Row) => n + Number(p.found_count), 0), 3);
