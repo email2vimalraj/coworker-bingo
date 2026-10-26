@@ -19,6 +19,7 @@ export interface SessionRow {
   max_squares_per_coworker: number;
   allowed_email_domains: string[];
   lines_to_win: number;
+  allow_username_claims: boolean;
   paused_at: string | null;
   created_at: string;
 }
@@ -47,6 +48,8 @@ export interface PollSession {
   max_squares_per_coworker: number;
   ranking_mode: RankingMode;
   lines_to_win: number;
+  require_full_card: boolean;
+  allow_username_claims: boolean;
   paused: boolean;
   paused_at: string | null;
 }

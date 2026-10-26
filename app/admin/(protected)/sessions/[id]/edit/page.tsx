@@ -44,6 +44,7 @@ export default function EditSession() {
             maxSquares: String(row.max_squares_per_coworker),
             domainsText: (row.allowed_email_domains ?? []).join(", "),
             linesToWin: String(row.lines_to_win ?? 1),
+            allowUsername: row.allow_username_claims ?? true,
           });
         }
       } catch (e) {

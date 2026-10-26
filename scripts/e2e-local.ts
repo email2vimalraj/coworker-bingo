@@ -298,6 +298,40 @@ async function main() {
     await admin.from("sessions").delete().eq("id", ed.data.id);
   }
 
+  // ---- Username option (allow_username_claims) ----
+  {
+    const mk = async (flag: boolean | undefined, name: string) => {
+      const args: Record<string, unknown> = {
+        p_name: name, p_duration_seconds: 300, p_ranking_mode: "correct_then_time",
+        p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 5,
+        p_prompts: DEFAULT_PROMPTS.slice(0, 24),
+      };
+      if (flag !== undefined) args.p_allow_username_claims = flag;
+      const sess = await rpc<{ id: string; code: string }>(admin, "create_session", args);
+      const pa = await rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: sess.data.code, p_full_name: "Una", p_email: "una@example.com" });
+      const pb = await rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: sess.data.code, p_full_name: "Vic", p_email: "vic@example.com" });
+      await rpc(admin, "start_session", { p_session_id: sess.data.id });
+      return { sess, pa, pb };
+    };
+    const claimWith = (t: { player_token: string }, cell: number, who: string) =>
+      rpc(anon, "create_claim", { p_token: t.player_token, p_cell_index: cell, p_coworker_code: who });
+    const off = await mk(false, "E2E no usernames");
+    const byUser = await claimWith(off.pa.data, 0, "vic");
+    check("flag off: username -> COWORKER_NOT_FOUND", byUser.error?.includes("COWORKER_NOT_FOUND") ?? false, byUser.error);
+    const byMail = await claimWith(off.pa.data, 0, "vic@example.com");
+    check("flag off: email -> COWORKER_NOT_FOUND", byMail.error?.includes("COWORKER_NOT_FOUND") ?? false, byMail.error);
+    const byCode = await claimWith(off.pa.data, 0, off.pb.data.player_code);
+    check("flag off: player code still works", !byCode.error, byCode.error);
+    const offPoll = await rpc<{ session: { allow_username_claims: boolean; require_full_card: boolean } }>(anon, "player_poll", { p_token: off.pa.data.player_token });
+    check("poll returns allow_username_claims=false", offPoll.data?.session.allow_username_claims === false && offPoll.data.session.require_full_card === false, offPoll.data?.session);
+    const on = await mk(undefined, "E2E usernames default");
+    const onUser = await claimWith(on.pa.data, 0, "vic");
+    check("flag on (default): username works", !onUser.error, onUser.error);
+    const onPoll = await rpc<{ session: { allow_username_claims: boolean } }>(anon, "player_poll", { p_token: on.pa.data.player_token });
+    check("poll returns allow_username_claims=true", onPoll.data?.session.allow_username_claims === true, onPoll.data?.session);
+    await admin.from("sessions").delete().in("id", [off.sess.data.id, on.sess.data.id]);
+  }
+
   // ---- Item 6: bingo lines mode ----
   {
     const lc = await rpc<{ id: string; code: string }>(admin, "create_session", {

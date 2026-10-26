@@ -12,7 +12,7 @@ export default function MyQrPage() {
       </Link>
       <h1 className="text-2xl font-extrabold">{data.me.full_name}</h1>
       <p className="text-center text-slate-600">Let a coworker scan this to confirm one of their squares.</p>
-      <MyQr sessionCode={sessionCode} playerCode={data.me.player_code} username={data.me.username} size={300} big />
+      <MyQr sessionCode={sessionCode} playerCode={data.me.player_code} username={data.session.allow_username_claims !== false ? data.me.username : undefined} size={300} big />
     </main>
   );
 }

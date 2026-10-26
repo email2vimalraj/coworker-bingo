@@ -148,7 +148,7 @@ async function main() {
   assert.deepEqual(Object.keys(live).sort(), ["board", "incoming", "me", "result", "server_now", "session"]);
   assert.deepEqual(
     Object.keys(live.session).sort(),
-    ["code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "paused", "paused_at", "ranking_mode", "started_at", "status", "winners_count"],
+    ["allow_username_claims", "code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "paused", "paused_at", "ranking_mode", "require_full_card", "started_at", "status", "winners_count"],
   );
   assert.deepEqual(Object.keys(live.me).sort(), ["correct", "full_name", "id", "lines", "player_code", "submitted_at", "username"]);
   assert.equal(live.me.username, "alice");
@@ -203,6 +203,29 @@ async function main() {
   await expectErr("COWORKER_NOT_FOUND", resolve(sid2, "bob")); // bob is in another session
   ok("ambiguous username -> USERNAME_AMBIGUOUS; full email and code still work");
   await expectErr("permission denied", as("anon", null, () => resolve(sid2, "jane")));
+
+  // --- allow_username_claims: per-session switch
+  assert.equal((await poll(A)).session.allow_username_claims, true);
+  const sess3 = await as("authenticated", ADMIN, () =>
+    rpc("create_session", ["No names", 600, "correct_then_time", false, 3, 5, prompts, [], 1, false]));
+  const sid3 = sess3.id as string;
+  const k1 = await join("Kim", "kim@a.com", sess3.code as string);
+  const k2 = await join("Lee", "lee@a.com", sess3.code as string);
+  assert.equal((await q("select allow_username_claims as a from sessions where id=$1", [sid3]))[0].a, false);
+  assert.equal(await resolve(sid3, k2.player_code), k2.player_id);
+  assert.equal(await resolve(sid3, `https://x/play/${sess3.code}/scan?c=${k2.player_code}`), k2.player_id);
+  await expectErr("COWORKER_NOT_FOUND", resolve(sid3, "lee"));
+  await expectErr("COWORKER_NOT_FOUND", resolve(sid3, "lee@a.com"));
+  await as("authenticated", ADMIN, () =>
+    rpc("update_session", [sid3, "No names", 600, "correct_then_time", false, 3, 5, [], prompts, 1, true]));
+  assert.equal(await resolve(sid3, "lee"), k2.player_id);
+  await as("authenticated", ADMIN, () =>
+    rpc("update_session", [sid3, "No names", 600, "correct_then_time", false, 3, 5, [], prompts, 1, false]));
+  await expectErr("COWORKER_NOT_FOUND", resolve(sid3, "lee"));
+  // omitted param keeps the default (true) for old callers
+  assert.equal((await q("select allow_username_claims as a from sessions where id=$1", [sid2]))[0].a, true);
+  void k1;
+  ok("allow_username_claims: off -> only code/QR URL; on -> username and email; default on");
 
   // Session was created with max 5 per coworker; drop to 1 for the limit test.
   await q("update sessions set max_squares_per_coworker = 1 where id=$1", [sid]);
@@ -368,7 +391,7 @@ async function main() {
     const anonTbl = await q("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and (has_table_privilege('anon', c.oid, 'select,insert,update,delete') or exists (select 1 from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and has_column_privilege('anon', c.oid, a.attnum, 'select')))");
     assert.deepEqual(anonTbl, []);
     // admin RPCs and internals are not executable by anon / public
-    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[],int)", "_bingo_lines()", "_elapsed_at(uuid,timestamptz)", "pause_session(uuid)", "resume_session(uuid)", "extend_session(uuid,int)", "_paused_seconds(uuid,timestamptz,timestamptz)", "_claim_expired(uuid,timestamptz)", "admin_sessions()", "_normalize_domains(text[])", "update_session(uuid,text,int,ranking_mode,boolean,int,int,text[],text[],int)", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
+    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[],int,boolean)", "_bingo_lines()", "_elapsed_at(uuid,timestamptz)", "pause_session(uuid)", "resume_session(uuid)", "extend_session(uuid,int)", "_paused_seconds(uuid,timestamptz,timestamptz)", "_claim_expired(uuid,timestamptz)", "admin_sessions()", "_normalize_domains(text[])", "update_session(uuid,text,int,ranking_mode,boolean,int,int,text[],text[],int,boolean)", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
     for (const f of adminFns) {
       const r = await q("select has_function_privilege('anon', $1::regprocedure, 'execute') as a, has_function_privilege('public', $1::regprocedure, 'execute') as p", [f]);
       assert.deepEqual(r[0], { a: false, p: false }, f);

@@ -53,6 +53,7 @@ export interface SessionPayload {
   p_allowed_email_domains: string[];
   p_prompts: string[];
   p_lines_to_win: number;
+  p_allow_username_claims: boolean;
 }
 
 export interface SessionFormValues {
@@ -65,6 +66,7 @@ export interface SessionFormValues {
   maxSquares: string;
   domainsText: string;
   linesToWin: string;
+  allowUsername: boolean;
 }
 
 export const DEFAULT_FORM_VALUES: SessionFormValues = {
@@ -77,6 +79,7 @@ export const DEFAULT_FORM_VALUES: SessionFormValues = {
   maxSquares: "1",
   domainsText: "",
   linesToWin: "1",
+  allowUsername: true,
 };
 
 export function SessionForm({
@@ -106,6 +109,7 @@ export function SessionForm({
   const [maxSquares, setMaxSquares] = useState(initial.maxSquares);
   const [domainsText, setDomainsText] = useState(initial.domainsText);
   const [linesToWin, setLinesToWin] = useState(initial.linesToWin);
+  const [allowUsername, setAllowUsername] = useState(initial.allowUsername);
   const [errors, setErrors] = useState<string[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -148,6 +152,7 @@ export function SessionForm({
         p_allowed_email_domains: parsedDomains.domains,
         p_prompts: trimmed,
         p_lines_to_win: mode === "lines" && lines !== null ? lines : 1,
+        p_allow_username_claims: allowUsername,
       });
     } catch (err) {
       setServerError(friendlyError(err));
@@ -191,6 +196,15 @@ export function SessionForm({
             placeholder="acme.com, acme.co.uk"
           />
         </Field>
+        <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border-2 border-slate-200 p-3">
+          <input type="checkbox" className="mt-1 h-5 w-5 accent-indigo-600" checked={allowUsername} onChange={(e) => setAllowUsername(e.target.checked)} />
+          <span>
+            <span className="block font-semibold">Players can fill a square by typing a coworker&apos;s username or email</span>
+            <span className="block text-sm text-slate-600">
+              When off, players can only scan a QR code or type a player code (like QX7-4PM).
+            </span>
+          </span>
+        </label>
       </Card>
 
       <Card className="space-y-3">

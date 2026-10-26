@@ -97,7 +97,7 @@ function ScanInner() {
         ) : (
           <div className="space-y-4">
             <Scanner onResult={onScan} paused={busy} />
-            <CodeEntry onSubmit={(raw) => claim(cell, raw)} busy={busy} />
+            <CodeEntry onSubmit={(raw) => claim(cell, raw)} busy={busy} allowUsername={session.allow_username_claims !== false} />
           </div>
         )}
       </Shell>

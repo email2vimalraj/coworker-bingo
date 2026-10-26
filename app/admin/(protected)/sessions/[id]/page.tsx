@@ -217,6 +217,7 @@ export default function SessionDashboard() {
             {session.allowed_email_domains?.length
               ? `Email domains: ${describeDomains(session.allowed_email_domains)}`
               : "Any email domain can join"}
+            {" "}&middot; {session.allow_username_claims === false ? "Squares by code or QR only" : "Squares by code, QR, username or email"}
           </p>
         </Card>
 

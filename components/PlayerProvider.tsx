@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { playerApi } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { clearPlayer, loadPlayer } from "@/lib/playerStorage";
@@ -15,6 +15,7 @@ import { usePlayerPoll } from "@/lib/usePlayerPoll";
 import { useAlerts } from "@/lib/useAlerts";
 import { normalizeSessionCode } from "@/lib/codes";
 import type { PollResponse } from "@/lib/supabase/types";
+import { useRequestPopups } from "@/lib/requestPrefs";
 import { ConfirmSheet } from "@/components/ConfirmSheet";
 import { Spinner } from "@/components/ui";
 
@@ -24,6 +25,8 @@ interface PlayerContextValue {
   data: PollResponse;
   offset: number;
   refresh: () => Promise<void>;
+  /** Answer an incoming confirmation request, then refresh. */
+  respond: (claimId: string, accept: boolean) => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -49,6 +52,8 @@ export function usePlayer(): PlayerContextValue {
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const params = useParams<{ code: string }>();
   const router = useRouter();
+  const pathname = usePathname();
+  const [popups] = useRequestPopups();
   const sessionCode =
     normalizeSessionCode(params.code ?? "") ??
     (params.code ?? "").toUpperCase();
@@ -111,7 +116,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   return (
     <BoostContext.Provider value={changeBoost}>
       <PlayerContext.Provider
-        value={{ sessionCode, token, data, offset, refresh }}
+        value={{ sessionCode, token, data, offset, refresh, respond }}
       >
         {failed ? (
           <div className="bg-amber-100 px-3 py-1 text-center text-sm font-medium text-amber-900">
@@ -119,7 +124,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           </div>
         ) : null}
         {children}
-        <ConfirmSheet incoming={data.incoming} onRespond={respond} />
+        {popups && !pathname?.endsWith("/requests") ? (
+          <ConfirmSheet incoming={data.incoming} onRespond={respond} />
+        ) : null}
       </PlayerContext.Provider>
     </BoostContext.Provider>
   );

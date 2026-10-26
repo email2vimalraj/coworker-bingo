@@ -14,6 +14,7 @@ export function CellSheet({
   onClose,
   onScan,
   onChanged,
+  allowUsername = true,
 }: {
   cell: BoardCell;
   token: string;
@@ -21,6 +22,7 @@ export function CellSheet({
   onClose: () => void;
   onScan: (cellIndex: number) => void;
   onChanged: () => Promise<void>;
+  allowUsername?: boolean;
 }) {
   const [enterCode, setEnterCode] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -99,10 +101,10 @@ export function CellSheet({
                 Scan coworker
               </Button>
               {enterCode ? (
-                <CodeEntry onSubmit={submitCode} busy={busy} />
+                <CodeEntry onSubmit={submitCode} busy={busy} allowUsername={allowUsername} />
               ) : (
                 <Button variant="secondary" className="w-full" onClick={() => setEnterCode(true)}>
-                  Code or username
+                  {allowUsername ? "Code or username" : "Code"}
                 </Button>
               )}
             </>

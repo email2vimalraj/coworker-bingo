@@ -10,6 +10,9 @@ import { burst } from "@/lib/confetti";
 import { notify } from "@/lib/alerts";
 import { useMinuteWarning } from "@/lib/useMinuteWarning";
 import { SoundToggle } from "@/components/SoundToggle";
+import { HelpButton } from "@/components/HelpButton";
+import { RequestsLink } from "@/components/RequestsLink";
+import { CopyButton } from "@/components/CopyButton";
 import { Timer } from "@/components/Timer";
 import { Button, Card, ErrorBox } from "@/components/ui";
 import { playerApi } from "@/lib/api";
@@ -115,6 +118,7 @@ export default function PlayPage() {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 p-4">
         <header className="relative pt-4 text-center">
+          <HelpButton className="absolute left-0 top-0" />
           <SoundToggle className="absolute right-0 top-0" />
           <p className="text-sm font-semibold uppercase tracking-wide text-accent">{session.name}</p>
           <h1 className="mt-1 text-3xl font-extrabold">Hi {me.full_name.split(" ")[0]}!</h1>
@@ -127,7 +131,7 @@ export default function PlayPage() {
         </Card>
         <Card>
           <p className="mb-3 text-center font-semibold">Your QR: coworkers scan this to confirm squares</p>
-          <MyQr sessionCode={sessionCode} playerCode={me.player_code} username={me.username} />
+          <MyQr sessionCode={sessionCode} playerCode={me.player_code} username={session.allow_username_claims !== false ? me.username : undefined} />
         </Card>
       </main>
     );
@@ -136,7 +140,8 @@ export default function PlayPage() {
   if (session.status === "ended") {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 p-4">
-        <header className="pt-4 text-center">
+        <header className="relative pt-4 text-center">
+          <HelpButton className="absolute right-0 top-0" />
           <p className="text-sm font-semibold uppercase tracking-wide text-accent">{session.name}</p>
           <h1 className="mt-1 text-3xl font-extrabold">Game over</h1>
         </header>
@@ -195,27 +200,48 @@ export default function PlayPage() {
   // live
   return (
     <div className="mx-auto min-h-dvh w-full max-w-md">
-      <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
-        <div>
-          <p className="text-[11px] font-semibold uppercase text-slate-500">Time left</p>
-          <Timer endsAt={session.ends_at} offset={offset} pausedAt={session.paused_at} className="text-2xl" />
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase text-slate-500">Time left</p>
+            <Timer endsAt={session.ends_at} offset={offset} pausedAt={session.paused_at} className="text-2xl" />
+          </div>
+          <div className="text-center">
+            <p className="text-[11px] font-semibold uppercase text-slate-500">{isLines ? "Lines" : "Score"}</p>
+            <p className="text-2xl font-extrabold tabular-nums">
+              {isLines ? `${me.lines} / ${session.lines_to_win}` : `${me.correct}/24`}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <HelpButton />
+            <SoundToggle />
+          </div>
         </div>
-        <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase text-slate-500">{isLines ? "Lines" : "Score"}</p>
-          <p className="text-2xl font-extrabold tabular-nums">
-            {isLines ? `${me.lines} / ${session.lines_to_win}` : `${me.correct}/24`}
-          </p>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm text-slate-600">
+              Your code: <span className="font-mono text-base font-extrabold tracking-wider text-slate-900">{me.player_code}</span>
+            </p>
+            {session.allow_username_claims !== false && me.username ? (
+              <p className="truncate text-xs text-slate-500">
+                Username: <span className="font-mono text-slate-700">{me.username}</span>
+              </p>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <CopyButton text={me.player_code} label="Copy" className="px-3" />
+            <Link
+              href={`/play/${sessionCode}/me`}
+              className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-3 text-sm font-semibold"
+            >
+              My QR
+            </Link>
+          </div>
         </div>
-        <SoundToggle />
-        <Link
-          href={`/play/${sessionCode}/me`}
-          className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-3 text-sm font-semibold"
-        >
-          My QR
-        </Link>
       </header>
       {toastEl}
       <main className="space-y-3 p-2 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+        <RequestsLink sessionCode={sessionCode} count={data.incoming.length} />
         {paused ? (
           <div role="status" className="rounded-xl bg-amber-200 p-3 text-center text-sm font-bold text-amber-950">
             Game paused by host. The timer is stopped and your board is locked until the game resumes.
@@ -269,6 +295,7 @@ export default function PlayPage() {
           onClose={() => setSelected(null)}
           onScan={(i) => router.push(`/play/${sessionCode}/scan?cell=${i}`)}
           onChanged={refresh}
+          allowUsername={session.allow_username_claims !== false}
         />
       ) : null}
     </div>
