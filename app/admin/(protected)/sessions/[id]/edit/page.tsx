@@ -43,6 +43,7 @@ export default function EditSession() {
             winners: String(row.winners_count),
             maxSquares: String(row.max_squares_per_coworker),
             domainsText: (row.allowed_email_domains ?? []).join(", "),
+            linesToWin: String(row.lines_to_win ?? 1),
           });
         }
       } catch (e) {

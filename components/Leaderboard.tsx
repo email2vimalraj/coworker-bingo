@@ -1,5 +1,6 @@
 import { ordinal } from "@/lib/format";
 import { formatDuration } from "@/lib/useCountdown";
+import type { RankingMode } from "@/lib/ranking";
 import type { LeaderboardRow } from "@/lib/supabase/types";
 
 export function Leaderboard({
@@ -7,13 +8,16 @@ export function Leaderboard({
   showEmail = true,
   big = false,
   onManage,
+  mode = "correct_then_time",
 }: {
   rows: LeaderboardRow[];
   showEmail?: boolean;
   big?: boolean;
   /** When set, each row gets a "Manage" button. */
   onManage?: (row: LeaderboardRow) => void;
+  mode?: RankingMode;
 }) {
+  const showLines = mode === "lines";
   if (rows.length === 0) {
     return <p className="p-4 text-slate-500">No players yet.</p>;
   }
@@ -27,6 +31,7 @@ export function Leaderboard({
             <th className={pad}>Rank</th>
             <th className={pad}>Name</th>
             {showEmail ? <th className={pad}>Email</th> : null}
+            {showLines ? <th className={pad}>Lines</th> : null}
             <th className={pad}>Correct</th>
             <th className={pad}>Time</th>
             <th className={pad}>Status</th>
@@ -42,10 +47,17 @@ export function Leaderboard({
               <td className={`${pad} tabular-nums`}>{r.rank ?? "-"}</td>
               <td className={pad}>{r.full_name}</td>
               {showEmail ? <td className={`${pad} break-all`}>{r.email}</td> : null}
+              {showLines ? <td className={`${pad} tabular-nums`}>{r.lines}</td> : null}
               <td className={`${pad} tabular-nums`}>{r.correct}/24</td>
               <td className={`${pad} tabular-nums`}>
-                {formatDuration(r.elapsed_seconds)}
-                {r.submitted_at ? "" : " *"}
+                {showLines && r.reach_seconds !== null ? (
+                  formatDuration(r.reach_seconds)
+                ) : (
+                  <>
+                    {formatDuration(r.elapsed_seconds)}
+                    {r.submitted_at ? "" : " *"}
+                  </>
+                )}
               </td>
               <td className={pad}>
                 {r.is_winner ? (
@@ -73,7 +85,10 @@ export function Leaderboard({
           ))}
         </tbody>
       </table>
-      <p className="px-3 py-2 text-xs text-slate-500">* did not submit: counted as the full duration.</p>
+      <p className="px-3 py-2 text-xs text-slate-500">
+        * did not submit: counted as the full duration.
+        {showLines ? " For players who reached the line target, Time is when their last needed line completed." : ""}
+      </p>
     </div>
   );
 }

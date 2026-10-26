@@ -16,6 +16,7 @@ import { playerApi } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { formatDuration, useCountdown } from "@/lib/useCountdown";
 import { ordinal } from "@/lib/format";
+import { cellsInCompletedLines } from "@/lib/lines";
 import type { BoardCell } from "@/lib/supabase/types";
 
 export default function PlayPage() {
@@ -45,6 +46,10 @@ export default function PlayPage() {
     }
   }, [won]);
 
+  const isLines = session.ranking_mode === "lines";
+  const lineCells = isLines
+    ? cellsInCompletedLines(board.filter((c) => c.status === "confirmed").map((c) => c.cell_index))
+    : undefined;
   const submitted = !!me.submitted_at;
   const timeUp = session.status === "live" && remaining !== null && remaining <= 0;
   const locked = submitted || timeUp || session.status !== "live";
@@ -135,13 +140,15 @@ export default function PlayPage() {
         <Card>
           <dl className="grid grid-cols-3 gap-2 text-center">
             <div>
-              <dt className="text-xs font-semibold uppercase text-slate-500">Correct</dt>
-              <dd className="text-3xl font-extrabold">{result?.correct ?? me.correct}/24</dd>
+              <dt className="text-xs font-semibold uppercase text-slate-500">{isLines ? "Lines" : "Correct"}</dt>
+              <dd className="text-3xl font-extrabold">
+                {isLines ? `${result?.lines ?? me.lines}/${session.lines_to_win}` : `${result?.correct ?? me.correct}/24`}
+              </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase text-slate-500">Time</dt>
               <dd className="text-3xl font-extrabold tabular-nums">
-                {result ? formatDuration(result.elapsed_seconds) : "--:--"}
+                {result ? formatDuration(result.reach_seconds ?? result.elapsed_seconds) : "--:--"}
               </dd>
             </div>
             <div>
@@ -160,7 +167,12 @@ export default function PlayPage() {
             </p>
           ) : null}
         </Card>
-        <BingoBoard board={board} selected={selected} onSelect={(c) => !c.is_free && setSelected(c.cell_index)} />
+        <BingoBoard
+          board={board}
+          selected={selected}
+          highlight={lineCells}
+          onSelect={(c) => !c.is_free && setSelected(c.cell_index)}
+        />
         {selectedCell ? (
           <CellSheet cell={selectedCell} token={token} locked onClose={() => setSelected(null)} onScan={() => {}} onChanged={refresh} />
         ) : null}
@@ -178,8 +190,10 @@ export default function PlayPage() {
           <Timer endsAt={session.ends_at} offset={offset} className="text-2xl" />
         </div>
         <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase text-slate-500">Score</p>
-          <p className="text-2xl font-extrabold tabular-nums">{me.correct}/24</p>
+          <p className="text-[11px] font-semibold uppercase text-slate-500">{isLines ? "Lines" : "Score"}</p>
+          <p className="text-2xl font-extrabold tabular-nums">
+            {isLines ? `${me.lines} / ${session.lines_to_win}` : `${me.correct}/24`}
+          </p>
         </div>
         <SoundToggle />
         <Link
@@ -203,6 +217,7 @@ export default function PlayPage() {
         <BingoBoard
           board={board}
           selected={selected}
+          highlight={lineCells}
           onSelect={(c) => !c.is_free && setSelected(c.cell_index)}
         />
         {!locked ? (

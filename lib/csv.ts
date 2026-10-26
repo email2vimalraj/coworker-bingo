@@ -8,11 +8,12 @@ export function cell(v: string | number | boolean | null): string {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export function leaderboardCsv(rows: LeaderboardRow[]): string {
+export function leaderboardCsv(rows: LeaderboardRow[], showLines = false): string {
   const header = [
     "Rank",
     "Name",
     "Email",
+    ...(showLines ? ["Lines", "Reach time (mm:ss)"] : []),
     "Correct",
     "Time (mm:ss)",
     "Submitted at",
@@ -25,6 +26,7 @@ export function leaderboardCsv(rows: LeaderboardRow[]): string {
       r.rank,
       r.full_name,
       r.email,
+      ...(showLines ? [r.lines, r.reach_seconds === null ? null : formatDuration(r.reach_seconds)] : []),
       r.correct,
       formatDuration(r.elapsed_seconds),
       r.submitted_at,

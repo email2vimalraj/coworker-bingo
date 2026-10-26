@@ -18,6 +18,7 @@ export interface SessionRow {
   winners_count: number;
   max_squares_per_coworker: number;
   allowed_email_domains: string[];
+  lines_to_win: number;
   created_at: string;
 }
 
@@ -43,6 +44,8 @@ export interface PollSession {
   duration_seconds: number;
   winners_count: number;
   max_squares_per_coworker: number;
+  ranking_mode: RankingMode;
+  lines_to_win: number;
 }
 
 export interface PollMe {
@@ -51,6 +54,7 @@ export interface PollMe {
   player_code: string;
   submitted_at: string | null;
   correct: number;
+  lines: number;
 }
 
 export interface BoardCell {
@@ -79,6 +83,8 @@ export interface PollResult {
   rank: number | null;
   is_winner: boolean;
   prize_rank: number | null;
+  lines: number;
+  reach_seconds: number | null;
 }
 
 export interface PollResponse {
@@ -101,6 +107,8 @@ export interface LeaderboardRow {
   rank: number | null;
   is_winner: boolean;
   prize_rank: number | null;
+  lines: number;
+  reach_seconds: number | null;
 }
 
 /** Row from the admin_sessions() RPC. */

@@ -281,6 +281,30 @@ async function main() {
     await admin.from("sessions").delete().eq("id", ed.data.id);
   }
 
+  // ---- Item 6: bingo lines mode ----
+  {
+    const lc = await rpc<{ id: string; code: string }>(admin, "create_session", {
+      p_name: "E2E lines", p_duration_seconds: 300, p_ranking_mode: "lines",
+      p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 24,
+      p_prompts: DEFAULT_PROMPTS.slice(0, 24), p_allowed_email_domains: [], p_lines_to_win: 1,
+    });
+    check("create_session in lines mode", !lc.error && !!lc.data?.code, lc.error);
+    await rpc(admin, "start_session", { p_session_id: lc.data.id });
+    const lp = await rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: lc.data.code, p_full_name: "Liner", p_email: "liner@example.com" });
+    const lq = await rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: lc.data.code, p_full_name: "Friend", p_email: "friend@example.com" });
+    // four squares of the middle row complete a line (FREE centre counts)
+    for (const cell of [10, 11, 13, 14]) {
+      const cl = await rpc<{ claim_id: string }>(anon, "create_claim", { p_token: lp.data.player_token, p_cell_index: cell, p_coworker_code: lq.data.player_code });
+      await rpc(anon, "respond_claim", { p_token: lq.data.player_token, p_claim_id: cl.data.claim_id, p_accept: true });
+    }
+    const lpoll = await rpc<{ me: { lines: number }; session: { ranking_mode: string; lines_to_win: number } }>(anon, "player_poll", { p_token: lp.data.player_token });
+    check("lines mode poll: 1 line after 4 middle-row squares", lpoll.data?.me.lines === 1 && lpoll.data.session.ranking_mode === "lines", lpoll.data);
+    const llb = await rpc<{ full_name: string; lines: number; eligible: boolean; reach_seconds: number | null; rank: number | null }[]>(admin, "session_leaderboard", { p_session_id: lc.data.id });
+    check("lines leaderboard: Liner eligible with reach time, ranked first",
+      llb.data?.[0]?.full_name === "Liner" && llb.data[0].lines === 1 && llb.data[0].eligible && llb.data[0].reach_seconds !== null && llb.data[0].rank === 1, llb.data);
+    await admin.from("sessions").delete().eq("id", lc.data.id);
+  }
+
   const del = await admin.from("sessions").delete().eq("id", sessionId);
   const gone = await admin.from("players").select("id").eq("session_id", sessionId);
   check("delete session cascades", !del.error && (gone.data ?? []).length === 0, del.error);

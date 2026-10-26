@@ -148,9 +148,9 @@ async function main() {
   assert.deepEqual(Object.keys(live).sort(), ["board", "incoming", "me", "result", "server_now", "session"]);
   assert.deepEqual(
     Object.keys(live.session).sort(),
-    ["code", "duration_seconds", "ends_at", "max_squares_per_coworker", "name", "started_at", "status", "winners_count"],
+    ["code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "ranking_mode", "started_at", "status", "winners_count"],
   );
-  assert.deepEqual(Object.keys(live.me).sort(), ["correct", "full_name", "id", "player_code", "submitted_at"]);
+  assert.deepEqual(Object.keys(live.me).sort(), ["correct", "full_name", "id", "lines", "player_code", "submitted_at"]);
   assert.equal(live.board.length, 25);
   assert.equal(live.board[12].is_free, true);
   assert.equal(live.result, null);
@@ -237,7 +237,7 @@ async function main() {
   const pended = await poll(B);
   assert.equal(pended.session.status, "ended");
   assert.ok(pended.result);
-  assert.deepEqual(Object.keys(pended.result!).sort(), ["correct", "elapsed_seconds", "is_winner", "prize_rank", "rank"]);
+  assert.deepEqual(Object.keys(pended.result!).sort(), ["correct", "elapsed_seconds", "is_winner", "lines", "prize_rank", "rank", "reach_seconds"]);
   await expectErr("SESSION_ENDED", join("Late", "late@example.com"));
   ok("effective status ended after ends_at: TIME_UP, result in poll, join blocked");
 
@@ -336,7 +336,7 @@ async function main() {
     const anonTbl = await q("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and (has_table_privilege('anon', c.oid, 'select,insert,update,delete') or exists (select 1 from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and has_column_privilege('anon', c.oid, a.attnum, 'select')))");
     assert.deepEqual(anonTbl, []);
     // admin RPCs and internals are not executable by anon / public
-    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[])", "_normalize_domains(text[])", "update_session(uuid,text,int,ranking_mode,boolean,int,int,text[],text[])", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
+    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[],int)", "_bingo_lines()", "_elapsed_at(uuid,timestamptz)", "_normalize_domains(text[])", "update_session(uuid,text,int,ranking_mode,boolean,int,int,text[],text[],int)", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
     for (const f of adminFns) {
       const r = await q("select has_function_privilege('anon', $1::regprocedure, 'execute') as a, has_function_privilege('public', $1::regprocedure, 'execute') as p", [f]);
       assert.deepEqual(r[0], { a: false, p: false }, f);
@@ -633,6 +633,119 @@ async function main() {
       await expectErr("ALREADY_STARTED", upd(sess3.id));
     });
     ok("update_session: lobby only, prompts updated in place (ids and boards stay valid), validation");
+  }
+
+  // ---- Item 6: bingo lines mode ----
+  {
+    // SQL lines table: 12 lines, FREE excluded, cells valid
+    const ln = await q("select idx, cells, need from _bingo_lines() order by idx");
+    assert.equal(ln.length, 12);
+    assert.deepEqual(ln[2].cells, [10, 11, 13, 14]);
+    assert.deepEqual(ln[10].cells, [0, 6, 18, 24]);
+    assert.deepEqual(ln[11].cells, [4, 8, 16, 20]);
+    assert.ok(ln.every((l) => (l.cells as number[]).length === l.need));
+
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("INVALID_INPUT", rpc("create_session", ["L", 300, "lines", false, 1, 1, prompts, [], 0]));
+      await expectErr("INVALID_INPUT", rpc("create_session", ["L", 300, "lines", false, 1, 1, prompts, [], 13]));
+    });
+    const ls = await as("authenticated", ADMIN, () => rpc("create_session", ["Lines", 600, "lines", true, 3, 24, prompts, [], 2]));
+    assert.equal((await q("select lines_to_win, ranking_mode::text as m from sessions where id=$1", [ls.id]))[0].lines_to_win, 2);
+    await q("update sessions set status='live', started_at = now() - interval '300 seconds', ends_at = now() + interval '300 seconds' where id=$1", [ls.id]);
+    const lj: Joined[] = [];
+    for (let i = 0; i < 9; i++) {
+      lj.push(await as("anon", null, () => rpc("join_session", [ls.code, `L${i}`, `l${i}@example.com`]) as unknown as Promise<Joined>));
+    }
+    const lids = lj.map((x) => x.player_id);
+    for (let i = 0; i < lids.length; i++) {
+      await q("update players set joined_at = now() - make_interval(secs => $1) where id=$2", [100 - i, lids[i]]);
+    }
+    // confirmed squares: [player index, cell, seconds after start]
+    const spec: [number, number[], number][] = [
+      [0, [0, 1, 2, 3, 4], 100], // row0 at 100
+      [0, [5, 6, 7, 8, 9], 200], // row1 at 200  -> 2 lines, reach 200
+      [1, [0, 1, 2, 3, 4], 60],
+      [1, [5, 6, 7, 8, 9], 150], // reach 150
+      [2, [0, 1, 2, 3, 4], 90],
+      [2, [5, 6, 7, 8, 9], 150], // reach 150: ties with player 1
+      [3, [0, 1, 2, 3, 4], 20], // only 1 line
+      [4, [10, 11, 13, 14], 120], // middle row, FREE counts
+      [4, [2, 7, 17, 22], 180], // column 2 -> 2 lines, reach 180
+      [5, [0, 1, 2, 3], 30], // 4 of row0: no line
+      [7, [0, 6, 18, 24], 40], // main diagonal
+      [7, [4, 8, 16, 20], 50], // anti diagonal -> 2 lines, reach 50
+    ];
+    for (const [pi, cells, sec] of spec) {
+      for (const cell of cells) {
+        await q(
+          "insert into claims(session_id, player_id, coworker_id, cell_index, status, created_at, resolved_at) values ($1,$2,$3,$4,'confirmed', (select started_at from sessions where id=$1) + make_interval(secs => $5 - 1), (select started_at from sessions where id=$1) + make_interval(secs => $5))",
+          [ls.id, lids[pi], lids[(pi + 1) % lids.length], cell, sec],
+        );
+      }
+    }
+    await q("update players set submitted_at = (select started_at from sessions where id=$1) + make_interval(secs => 100) where id in ($2, $3)", [ls.id, lids[5], lids[6]]);
+
+    const lcfgs = [
+      { lines: 2, winners: 3, full: true },
+      { lines: 2, winners: 1, full: false },
+      { lines: 1, winners: 5, full: false },
+      { lines: 3, winners: 2, full: false },
+    ];
+    for (const c of lcfgs) {
+      await q("update sessions set lines_to_win=$1, winners_count=$2, require_full_card=$3 where id=$4", [c.lines, c.winners, c.full, ls.id]);
+      const lb = await as("authenticated", ADMIN, () => q("select * from session_leaderboard($1)", [ls.id]));
+      const st = (await q("select extract(epoch from started_at)*1000 as st from sessions where id=$1", [ls.id]))[0];
+      const pl = await q("select id, extract(epoch from joined_at)*1000 as j, extract(epoch from submitted_at)*1000 as sub from players where session_id=$1", [ls.id]);
+      const cl = await q("select player_id, cell_index, extract(epoch from resolved_at)*1000 as r from claims where session_id=$1 and status='confirmed'", [ls.id]);
+      const expected = rankPlayers(
+        pl.map((p) => {
+          const mine = cl.filter((x) => x.player_id === p.id).map((x) => ({ cell: x.cell_index as number, resolvedAt: Number(x.r) }));
+          return { id: p.id as string, correct: mine.length, joinedAt: Number(p.j), submittedAt: p.sub === null ? null : Number(p.sub), confirmed: mine };
+        }),
+        { mode: "lines", requireFullCard: c.full, winnersCount: c.winners, startedAt: Number(st.st), durationSeconds: 600, linesToWin: c.lines },
+      );
+      assert.equal(lb.length, expected.length);
+      lb.forEach((row, i) => {
+        const e = expected[i];
+        const label = `lines(${c.lines}, winners ${c.winners}): row ${i}`;
+        assert.equal(row.player_id, e.id, `${label} id`);
+        assert.equal(row.correct, e.correct, `${label} correct`);
+        assert.equal(row.lines, e.lines, `${label} lines`);
+        assert.ok(Math.abs(Number(row.elapsed_seconds) - e.elapsedSeconds) < 0.01, `${label} elapsed`);
+        assert.equal(row.eligible, e.eligible, `${label} eligible`);
+        assert.equal(row.rank, e.rank, `${label} rank`);
+        assert.equal(row.is_winner, e.isWinner, `${label} winner`);
+        assert.equal(row.prize_rank, e.prizeRank, `${label} prize`);
+        if (e.reachSeconds === null) assert.equal(row.reach_seconds, null, `${label} reach null`);
+        else assert.ok(Math.abs(Number(row.reach_seconds) - e.reachSeconds) < 0.01, `${label} reach`);
+      });
+      ok(`leaderboard matches lib/ranking.ts (lines, lines_to_win=${c.lines}, winners=${c.winners})`);
+    }
+    // concrete expectations for lines_to_win = 2: P7 (50s) > P1 = P2 (150s, tie) > P4 (180s) > P0 (200s)
+    await q("update sessions set lines_to_win=2, winners_count=3, require_full_card=false where id=$1", [ls.id]);
+    const lb2 = await as("authenticated", ADMIN, () => q("select player_id, rank, lines, is_winner, round(reach_seconds::numeric) as r from session_leaderboard($1)", [ls.id]));
+    assert.deepEqual(lb2.slice(0, 5).map((r) => r.player_id), [lids[7], lids[1], lids[2], lids[4], lids[0]]);
+    assert.deepEqual(lb2.slice(0, 5).map((r) => r.rank), [1, 2, 2, 4, 5]);
+    assert.deepEqual(lb2.slice(0, 5).map((r) => Number(r.r)), [50, 150, 150, 180, 200]);
+    assert.deepEqual(lb2.slice(0, 5).map((r) => r.is_winner), [true, true, true, false, false]);
+    // non-eligible follow: P3 (1 line) first
+    assert.equal(lb2[5].player_id, lids[3]);
+    assert.equal(lb2[5].lines, 1);
+    ok("lines mode: reach time ordering, ties share rank, FREE centre counts, non-eligible by lines");
+
+    // poll: me.lines, session fields, result after end
+    const lp = await as("anon", null, () => rpc("player_poll", [lj[4].player_token]) as unknown as Promise<Poll>);
+    assert.equal(lp.me.lines, 2);
+    assert.equal(lp.session.ranking_mode, "lines");
+    assert.equal(lp.session.lines_to_win, 2);
+    const lp3 = await as("anon", null, () => rpc("player_poll", [lj[5].player_token]) as unknown as Promise<Poll>);
+    assert.equal(lp3.me.lines, 0);
+    await q("update sessions set ends_at = now() - interval '1 second' where id=$1", [ls.id]);
+    const lend = await as("anon", null, () => rpc("player_poll", [lj[7].player_token]) as unknown as Promise<Poll>);
+    assert.equal(lend.result!.lines, 2);
+    assert.equal(Math.round(Number(lend.result!.reach_seconds)), 50);
+    assert.equal(lend.result!.rank, 1);
+    ok("player_poll: me.lines, session.ranking_mode/lines_to_win, result.lines/reach_seconds");
   }
 
   console.log(`\n${passed} checks passed`);

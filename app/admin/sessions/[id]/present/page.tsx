@@ -80,9 +80,13 @@ export default function PresentPage() {
                 >
                   <span className="w-[2.2em] shrink-0 tabular-nums text-slate-400">{r.rank ?? i + 1}</span>
                   <span className="min-w-0 flex-1 truncate">{r.full_name}</span>
-                  <span className="shrink-0 tabular-nums">{r.correct}/24</span>
+                  <span className="shrink-0 tabular-nums">
+                    {session.ranking_mode === "lines"
+                      ? `${r.lines} ${r.lines === 1 ? "line" : "lines"}`
+                      : `${r.correct}/24`}
+                  </span>
                   <span className="w-[3.6em] shrink-0 text-right font-mono tabular-nums text-slate-400">
-                    {formatDuration(r.elapsed_seconds)}
+                    {formatDuration(r.reach_seconds ?? r.elapsed_seconds)}
                   </span>
                 </li>
               ))}

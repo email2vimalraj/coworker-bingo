@@ -172,8 +172,12 @@ export default function SessionDashboard() {
             />
           ) : null}
           <p className="text-sm text-slate-600">
-            {session.ranking_mode === "full_card_fastest" ? "First full card wins" : "Most squares, then fastest"}
-            {session.require_full_card ? ", full card required" : ""} &middot; {session.winners_count} winner
+            {session.ranking_mode === "lines"
+              ? `First to ${session.lines_to_win} bingo line${session.lines_to_win === 1 ? "" : "s"}`
+              : session.ranking_mode === "full_card_fastest"
+                ? "First full card wins"
+                : "Most squares, then fastest"}
+            {session.require_full_card && session.ranking_mode !== "lines" ? ", full card required" : ""} &middot; {session.winners_count} winner
             {session.winners_count === 1 ? "" : "s"} &middot; {session.max_squares_per_coworker} square
             {session.max_squares_per_coworker === 1 ? "" : "s"} per coworker
           </p>
@@ -211,13 +215,13 @@ export default function SessionDashboard() {
             variant="secondary"
             disabled={rows.length === 0}
             onClick={() =>
-              downloadCsv(`${session.name.replace(/[^\w-]+/g, "_")}-${session.code}-results.csv`, leaderboardCsv(rows))
+              downloadCsv(`${session.name.replace(/[^\w-]+/g, "_")}-${session.code}-results.csv`, leaderboardCsv(rows, session.ranking_mode === "lines"))
             }
           >
             Export CSV
           </Button>
         </div>
-        <Leaderboard rows={rows} onManage={setManaged} />
+        <Leaderboard rows={rows} mode={session.ranking_mode} onManage={setManaged} />
         {managed ? (
           <PlayerAdminSheet
             player={managed}

@@ -3,15 +3,20 @@ import type { BoardCell } from "@/lib/supabase/types";
 export function BingoCell({
   cell,
   selected,
+  inLine = false,
   onClick,
 }: {
   cell: BoardCell;
   selected?: boolean;
+  /** part of a completed bingo line */
+  inLine?: boolean;
   onClick: () => void;
 }) {
   if (cell.is_free) {
     return (
-      <div className="flex aspect-square items-center justify-center rounded-lg bg-indigo-100 text-xs font-extrabold tracking-wide text-accent">
+      <div
+        className={`flex aspect-square items-center justify-center rounded-lg text-xs font-extrabold tracking-wide ${inLine ? "bg-amber-300 text-amber-950 ring-2 ring-amber-500" : "bg-indigo-100 text-accent"}`}
+      >
         FREE
       </div>
     );
@@ -19,7 +24,9 @@ export function BingoCell({
   let tone = "bg-white border-slate-300 text-slate-900";
   let sub: string | null = null;
   if (cell.status === "confirmed") {
-    tone = "bg-emerald-100 border-emerald-500 text-emerald-950";
+    tone = inLine
+      ? "bg-amber-200 border-amber-500 text-amber-950 ring-2 ring-amber-500"
+      : "bg-emerald-100 border-emerald-500 text-emerald-950";
     sub = cell.coworker_name;
   } else if (cell.status === "pending") {
     tone = "bg-amber-100 border-amber-500 text-amber-950";

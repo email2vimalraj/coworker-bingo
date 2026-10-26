@@ -25,6 +25,11 @@ const MODES: { value: RankingMode; title: string; text: string }[] = [
     text: "Whoever confirms the most squares wins. If players tie on squares, the one who submitted sooner ranks higher.",
   },
   {
+    value: "lines",
+    title: "Bingo lines: first to complete N lines wins",
+    text: "Classic bingo. A line is a row, column or diagonal of the board (the FREE centre counts). Whoever completes the chosen number of lines first wins.",
+  },
+  {
     value: "full_card_fastest",
     title: "First full card wins",
     text: "Only players who complete all 24 squares are ranked, and the fastest full card comes first.",
@@ -47,6 +52,7 @@ export interface SessionPayload {
   p_max_squares_per_coworker: number;
   p_allowed_email_domains: string[];
   p_prompts: string[];
+  p_lines_to_win: number;
 }
 
 export interface SessionFormValues {
@@ -58,6 +64,7 @@ export interface SessionFormValues {
   winners: string;
   maxSquares: string;
   domainsText: string;
+  linesToWin: string;
 }
 
 export const DEFAULT_FORM_VALUES: SessionFormValues = {
@@ -69,6 +76,7 @@ export const DEFAULT_FORM_VALUES: SessionFormValues = {
   winners: "3",
   maxSquares: "1",
   domainsText: "",
+  linesToWin: "1",
 };
 
 export function SessionForm({
@@ -97,6 +105,7 @@ export function SessionForm({
   const [winners, setWinners] = useState(initial.winners);
   const [maxSquares, setMaxSquares] = useState(initial.maxSquares);
   const [domainsText, setDomainsText] = useState(initial.domainsText);
+  const [linesToWin, setLinesToWin] = useState(initial.linesToWin);
   const [errors, setErrors] = useState<string[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -112,6 +121,8 @@ export function SessionForm({
     if (dur === null) problems.push("Duration must be a whole number of minutes from 1 to 120.");
     if (win === null) problems.push("Winners must be a whole number from 1 to 20.");
     if (max === null) problems.push("Max squares per coworker must be a whole number from 1 to 24.");
+    const lines = intIn(linesToWin, 1, 12);
+    if (mode === "lines" && lines === null) problems.push("Lines to win must be a whole number from 1 to 12.");
     const parsedDomains = parseDomains(domainsText);
     if (parsedDomains.invalid.length)
       problems.push(`Not a valid domain (use e.g. acme.com, no @): ${parsedDomains.invalid.join(", ")}`);
@@ -136,6 +147,7 @@ export function SessionForm({
         p_max_squares_per_coworker: max,
         p_allowed_email_domains: parsedDomains.domains,
         p_prompts: trimmed,
+        p_lines_to_win: mode === "lines" && lines !== null ? lines : 1,
       });
     } catch (err) {
       setServerError(friendlyError(err));
@@ -195,6 +207,14 @@ export function SessionForm({
             </span>
           </label>
         ))}
+        {mode === "lines" ? (
+          <Field
+            label="Lines to win"
+            hint="1 to 12 (5 rows, 5 columns and 2 diagonals; the FREE centre counts). The first players to complete this many lines win."
+          >
+            <input className={inputClass} inputMode="numeric" value={linesToWin} onChange={(e) => setLinesToWin(e.target.value)} />
+          </Field>
+        ) : (
         <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border-2 border-slate-200 p-3">
           <input type="checkbox" className="mt-1 h-5 w-5 accent-indigo-600" checked={fullCard} onChange={(e) => setFullCard(e.target.checked)} />
           <span>
@@ -204,6 +224,7 @@ export function SessionForm({
             </span>
           </span>
         </label>
+        )}
       </Card>
 
       <Card className="space-y-3">

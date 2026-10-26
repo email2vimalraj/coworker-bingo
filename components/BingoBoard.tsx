@@ -5,10 +5,13 @@ export function BingoBoard({
   board,
   selected,
   onSelect,
+  highlight,
 }: {
   board: BoardCell[];
   selected: number | null;
   onSelect: (cell: BoardCell) => void;
+  /** lines mode: cell indexes that belong to a completed line */
+  highlight?: Set<number>;
 }) {
   return (
     <div className="grid grid-cols-5 gap-1" role="grid" aria-label="Bingo board">
@@ -17,6 +20,7 @@ export function BingoBoard({
           key={cell.cell_index}
           cell={cell}
           selected={selected === cell.cell_index}
+          inLine={highlight?.has(cell.cell_index) ?? false}
           onClick={() => onSelect(cell)}
         />
       ))}
