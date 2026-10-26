@@ -6,6 +6,7 @@ import { usePlayer } from "@/components/PlayerProvider";
 import { BingoBoard } from "@/components/BingoBoard";
 import { CellSheet } from "@/components/CellSheet";
 import { MyQr } from "@/components/MyQr";
+import { burst } from "@/lib/confetti";
 import { notify } from "@/lib/alerts";
 import { useMinuteWarning } from "@/lib/useMinuteWarning";
 import { SoundToggle } from "@/components/SoundToggle";
@@ -34,6 +35,15 @@ export default function PlayPage() {
     setToast("1 minute left!");
     window.setTimeout(() => setToast(null), 4000);
   });
+
+  const won = session.status === "ended" && !!result?.is_winner;
+  const confettied = useRef(false);
+  useEffect(() => {
+    if (won && !confettied.current) {
+      confettied.current = true;
+      void burst("finale");
+    }
+  }, [won]);
 
   const submitted = !!me.submitted_at;
   const timeUp = session.status === "live" && remaining !== null && remaining <= 0;
@@ -116,10 +126,10 @@ export default function PlayPage() {
         </header>
         {result?.is_winner ? (
           <div className="rounded-2xl bg-amber-400 p-4 text-center text-amber-950 shadow">
-            <p className="text-2xl font-extrabold">You won!</p>
-            {result.prize_rank ? (
-              <p className="text-lg font-bold">{ordinal(result.prize_rank)} prize</p>
-            ) : null}
+            <p className="text-3xl font-black">
+              {result.prize_rank ? `You won ${ordinal(result.prize_rank)} prize!` : "You won!"}
+            </p>
+            <p className="text-base font-semibold">Congratulations!</p>
           </div>
         ) : null}
         <Card>

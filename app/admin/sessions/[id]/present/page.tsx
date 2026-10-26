@@ -5,6 +5,7 @@ import { getAppOrigin } from "@/lib/appUrl";
 import { joinUrl } from "@/lib/codes";
 import { effectiveStatus, useSessionDashboard } from "@/lib/useSessionDashboard";
 import { formatClock, formatDuration, useCountdown } from "@/lib/useCountdown";
+import { Celebration } from "@/components/Celebration";
 import { QRCode } from "@/components/QRCode";
 import { Spinner } from "@/components/ui";
 
@@ -29,6 +30,7 @@ export default function PresentPage() {
 
   if (loading || !session) return <Spinner />;
   const status = effectiveStatus(session, Date.now() + offsetMs);
+  if (status === "ended") return <Celebration sessionName={session.name} rows={rows} />;
   const clock =
     status === "live" && remaining !== null
       ? formatClock(remaining)
