@@ -336,7 +336,7 @@ async function main() {
     const anonTbl = await q("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and (has_table_privilege('anon', c.oid, 'select,insert,update,delete') or exists (select 1 from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and has_column_privilege('anon', c.oid, a.attnum, 'select')))");
     assert.deepEqual(anonTbl, []);
     // admin RPCs and internals are not executable by anon / public
-    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[])", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
+    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[])", "_normalize_domains(text[])", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
     for (const f of adminFns) {
       const r = await q("select has_function_privilege('anon', $1::regprocedure, 'execute') as a, has_function_privilege('public', $1::regprocedure, 'execute') as p", [f]);
       assert.deepEqual(r[0], { a: false, p: false }, f);
@@ -561,6 +561,36 @@ async function main() {
     await as("anon", null, () => expectErr("permission denied", rpc("session_stats", [stId])));
     await as("authenticated", OTHER_USER, () => expectErr("NOT_ADMIN", rpc("session_stats", [stId])));
     ok("session_stats: counts, distribution, connections, empty session, admin-only");
+  }
+
+  // ---- Item 2: allowed email domains ----
+  {
+    const mk = (domains: string[]) =>
+      as("authenticated", ADMIN, () =>
+        rpc("create_session", ["Dom", 300, "correct_then_time", false, 1, 1, prompts, domains]),
+      );
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("INVALID_INPUT", rpc("create_session", ["Dom", 300, "correct_then_time", false, 1, 1, prompts, ["@acme.com"]]));
+      await expectErr("INVALID_INPUT", rpc("create_session", ["Dom", 300, "correct_then_time", false, 1, 1, prompts, ["localhost"]]));
+    });
+    const d = await mk([" ACME.com ", "acme.co.uk", "acme.com"]);
+    const stored = await q("select allowed_email_domains as d from sessions where id=$1", [d.id]);
+    assert.deepEqual(stored[0].d, ["acme.com", "acme.co.uk"]);
+    const dj = (email: string) => as("anon", null, () => rpc("join_session", [d.code, "Dom User", email]));
+    await expectErr("EMAIL_DOMAIN", dj("x@gmail.com"));
+    await expectErr("EMAIL_DOMAIN", dj("x@mail.acme.com"));
+    await expectErr("EMAIL_DOMAIN", dj("x@evilacme.com"));
+    await expectErr("EMAIL_DOMAIN", dj("x@acme.com.evil.io"));
+    await dj("Ok@ACME.com");
+    await dj("ok2@acme.co.uk");
+    const info = await as("anon", null, () => rpc("session_join_info", [String(d.code).toLowerCase()]));
+    assert.deepEqual(info, { name: "Dom", status: "lobby", allowed_email_domains: ["acme.com", "acme.co.uk"] });
+    await expectErr("SESSION_NOT_FOUND", as("anon", null, () => rpc("session_join_info", ["ZZZZZZ"])));
+    const open = await as("authenticated", ADMIN, () => rpc("create_session", ["Open", 300, "correct_then_time", false, 1, 1, prompts]));
+    const oi = await as("anon", null, () => rpc("session_join_info", [open.code]));
+    assert.deepEqual(oi.allowed_email_domains, []);
+    await as("anon", null, () => rpc("join_session", [open.code, "Anyone", "any@gmail.com"]));
+    ok("allowed email domains: normalized, exact-match enforced, join info, empty = any");
   }
 
   console.log(`\n${passed} checks passed`);

@@ -17,6 +17,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CLAIM_NOT_PENDING: "That request has already been answered or has timed out.",
   NOT_ADMIN: "Your account is not an admin. Ask an existing admin to add you on the Admins page.",
   PROMPT_COUNT: "A session needs exactly 24 prompts.",
+  EMAIL_DOMAIN: "Please use your work email.",
   ALREADY_STARTED: "This session has already started.",
   PLAYER_NOT_FOUND: "That player no longer exists. They may have already been removed.",
   USER_NOT_FOUND:

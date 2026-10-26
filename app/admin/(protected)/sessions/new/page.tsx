@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { rpc } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { DEFAULT_PROMPTS } from "@/lib/defaultPrompts";
+import { parseDomains, MAX_DOMAINS } from "@/lib/domains";
 import type { RankingMode } from "@/lib/ranking";
 import { Button, Card, ErrorBox, Field, inputClass } from "@/components/ui";
 
@@ -47,6 +48,7 @@ export default function NewSession() {
   const [fullCard, setFullCard] = useState(false);
   const [winners, setWinners] = useState("3");
   const [maxSquares, setMaxSquares] = useState("1");
+  const [domainsText, setDomainsText] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,6 +64,10 @@ export default function NewSession() {
     if (dur === null) problems.push("Duration must be a whole number of minutes from 1 to 120.");
     if (win === null) problems.push("Winners must be a whole number from 1 to 20.");
     if (max === null) problems.push("Max squares per coworker must be a whole number from 1 to 24.");
+    const parsedDomains = parseDomains(domainsText);
+    if (parsedDomains.invalid.length)
+      problems.push(`Not a valid domain (use e.g. acme.com, no @): ${parsedDomains.invalid.join(", ")}`);
+    if (parsedDomains.domains.length > MAX_DOMAINS) problems.push(`At most ${MAX_DOMAINS} allowed domains.`);
     const trimmed = prompts.map((p) => p.trim());
     if (trimmed.some((p) => !p)) problems.push("All 24 prompts must be filled in.");
     if (trimmed.some((p) => p.length > 120)) problems.push("Prompts can be at most 120 characters.");
@@ -81,6 +87,7 @@ export default function NewSession() {
         p_winners_count: win,
         p_max_squares_per_coworker: max,
         p_prompts: trimmed,
+        p_allowed_email_domains: parsedDomains.domains,
       });
       router.push(`/admin/sessions/${res.id}`);
     } catch (err) {
@@ -113,6 +120,18 @@ export default function NewSession() {
             <input className={inputClass} inputMode="numeric" value={maxSquares} onChange={(e) => setMaxSquares(e.target.value)} />
           </Field>
         </div>
+        <Field
+          label="Allowed email domains (optional)"
+          hint="Only players with an email on one of these domains can join. Separate with commas or spaces, e.g. acme.com, acme.co.uk. Leave empty to allow any email."
+        >
+          <input
+            className={inputClass}
+            value={domainsText}
+            onChange={(e) => setDomainsText(e.target.value)}
+            autoCapitalize="none"
+            placeholder="acme.com, acme.co.uk"
+          />
+        </Field>
       </Card>
 
       <Card className="space-y-3">

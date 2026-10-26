@@ -5,17 +5,19 @@ import { z } from "zod";
 import { playerApi } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { normalizeSessionCode } from "@/lib/codes";
+import { describeDomains, emailDomainAllowed } from "@/lib/domains";
 import { loadPlayer, savePlayer } from "@/lib/playerStorage";
 import { Button, ErrorBox, Field, inputClass } from "@/components/ui";
 
-const schema = z.object({
+const buildSchema = (domains: string[]) => z.object({
   fullName: z.string().trim().min(1, "Please enter your full name.").max(100, "That name is too long."),
   email: z
     .string()
     .trim()
     .min(1, "Please enter your work email.")
     .max(254, "That email is too long.")
-    .email("Please enter a valid email address."),
+    .email("Please enter a valid email address.")
+    .refine((v) => emailDomainAllowed(v, domains), `Please use your ${describeDomains(domains)} work email.`),
 });
 
 export default function JoinPage() {
@@ -28,6 +30,7 @@ export default function JoinPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [redirecting, setRedirecting] = useState(true);
+  const [domains, setDomains] = useState<string[]>([]);
 
   useEffect(() => {
     if (loadPlayer(code)) {
@@ -37,10 +40,25 @@ export default function JoinPage() {
     }
   }, [code, router]);
 
+  useEffect(() => {
+    let cancelled = false;
+    playerApi
+      .joinInfo(code)
+      .then((info) => {
+        if (!cancelled) setDomains(info.allowed_email_domains ?? []);
+      })
+      .catch(() => {
+        // Not fatal: the server still enforces the domain on join.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    const parsed = schema.safeParse({ fullName, email });
+    const parsed = buildSchema(domains).safeParse({ fullName, email });
     if (!parsed.success) {
       const next: { fullName?: string; email?: string } = {};
       for (const issue of parsed.error.issues) {
@@ -88,7 +106,11 @@ export default function JoinPage() {
             maxLength={100}
           />
         </Field>
-        <Field label="Work email" error={errors.email} hint="Used only so you can't join twice.">
+        <Field label="Work email" error={errors.email} hint={
+            domains.length
+              ? `Use your ${describeDomains(domains)} email. Used only so you can't join twice.`
+              : "Used only so you can't join twice."
+          }>
           <input
             className={inputClass}
             type="email"
@@ -97,7 +119,7 @@ export default function JoinPage() {
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
             autoCapitalize="none"
-            placeholder="alex@company.com"
+            placeholder={domains.length ? `alex@${domains[0]}` : "alex@company.com"}
             maxLength={254}
           />
         </Field>

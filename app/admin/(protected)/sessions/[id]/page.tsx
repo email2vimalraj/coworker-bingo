@@ -6,6 +6,7 @@ import { rpc } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { getAppOrigin } from "@/lib/appUrl";
 import { joinUrl } from "@/lib/codes";
+import { describeDomains } from "@/lib/domains";
 import { downloadCsv, leaderboardCsv } from "@/lib/csv";
 import { effectiveStatus, useSessionDashboard } from "@/lib/useSessionDashboard";
 import { formatClock, useCountdown } from "@/lib/useCountdown";
@@ -167,6 +168,11 @@ export default function SessionDashboard() {
             {session.require_full_card ? ", full card required" : ""} &middot; {session.winners_count} winner
             {session.winners_count === 1 ? "" : "s"} &middot; {session.max_squares_per_coworker} square
             {session.max_squares_per_coworker === 1 ? "" : "s"} per coworker
+          </p>
+          <p className="text-sm text-slate-600">
+            {session.allowed_email_domains?.length
+              ? `Email domains: ${describeDomains(session.allowed_email_domains)}`
+              : "Any email domain can join"}
           </p>
         </Card>
 

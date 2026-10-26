@@ -241,6 +241,22 @@ async function main() {
   check("session_stats: connections present", (stats.data?.people.total_unique_connections ?? 0) >= 1 && (stats.data?.people.top_connected.length ?? 0) >= 1, stats.error ?? stats.data?.people);
   const anonStats = await rpc(anon, "session_stats", { p_session_id: sessionId });
   check("anon can't call session_stats", !!anonStats.error, anonStats.error);
+  // ---- Item 2: allowed email domains ----
+  {
+    const dom = await rpc<{ id: string; code: string }>(admin, "create_session", {
+      p_name: "E2E domains", p_duration_seconds: 300, p_ranking_mode: "correct_then_time",
+      p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 1,
+      p_prompts: DEFAULT_PROMPTS.slice(0, 24), p_allowed_email_domains: ["Acme.com"],
+    });
+    check("create_session with allowed domains", !dom.error && !!dom.data?.code, dom.error);
+    const info = await rpc<{ allowed_email_domains: string[] }>(anon, "session_join_info", { p_code: dom.data.code });
+    check("session_join_info (anon) returns domains", info.data?.allowed_email_domains?.[0] === "acme.com", info);
+    const bad = await rpc(anon, "join_session", { p_code: dom.data.code, p_full_name: "Gmail", p_email: "g@gmail.com" });
+    check("join with other domain rejected (EMAIL_DOMAIN)", bad.error?.includes("EMAIL_DOMAIN") ?? false, bad.error);
+    const good = await rpc(anon, "join_session", { p_code: dom.data.code, p_full_name: "Acme", p_email: "a@acme.com" });
+    check("join with allowed domain works", !good.error, good.error);
+    await admin.from("sessions").delete().eq("id", dom.data.id);
+  }
 
   const del = await admin.from("sessions").delete().eq("id", sessionId);
   const gone = await admin.from("players").select("id").eq("session_id", sessionId);

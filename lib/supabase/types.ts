@@ -17,7 +17,14 @@ export interface SessionRow {
   require_full_card: boolean;
   winners_count: number;
   max_squares_per_coworker: number;
+  allowed_email_domains: string[];
   created_at: string;
+}
+
+export interface JoinInfo {
+  name: string;
+  status: SessionStatus;
+  allowed_email_domains: string[];
 }
 
 export interface JoinResult {
