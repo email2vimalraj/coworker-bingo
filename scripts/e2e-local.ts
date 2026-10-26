@@ -46,7 +46,7 @@ async function rpc<T>(c: SupabaseClient, name: string, args: Record<string, unkn
 type Cell = { cell_index: number; is_free: boolean; status: string | null; claim_id: string | null; last_outcome: string | null };
 type Poll = {
   session: { status: string };
-  me: { player_code: string; correct: number; submitted_at: string | null };
+  me: { player_code: string; username: string; correct: number; submitted_at: string | null };
   board: Cell[];
   incoming: { claim_id: string; from_name: string; prompt: string }[];
   result: null | { correct: number; rank: number | null; is_winner: boolean; prize_rank: number | null };
@@ -126,11 +126,20 @@ async function main() {
   check("self scan rejected", self.error?.includes("SELF_SCAN") ?? false, self.error);
   const reuse = await rpc(anon, "create_claim", { p_token: a.data.player_token, p_cell_index: 2, p_coworker_code: b.data.player_code });
   check("same coworker twice rejected (limit 1)", reuse.error?.includes("COWORKER_LIMIT") ?? false, reuse.error);
+  const selfName = await rpc(anon, "create_claim", { p_token: a.data.player_token, p_cell_index: 1, p_coworker_code: " ALEX " });
+  check("self via username -> SELF_SCAN", selfName.error?.includes("SELF_SCAN") ?? false, selfName.error);
+  const selfMail = await rpc(anon, "create_claim", { p_token: a.data.player_token, p_cell_index: 1, p_coworker_code: "Alex@Example.com" });
+  check("self via full email -> SELF_SCAN", selfMail.error?.includes("SELF_SCAN") ?? false, selfMail.error);
+  const byName = await rpc(anon, "create_claim", { p_token: a.data.player_token, p_cell_index: 2, p_coworker_code: "PRIYA" });
+  check("username matches coworker (then hits limit 1)", byName.error?.includes("COWORKER_LIMIT") ?? false, byName.error);
+  const noUser = await rpc(anon, "create_claim", { p_token: a.data.player_token, p_cell_index: 3, p_coworker_code: "nobody" });
+  check("unknown username -> COWORKER_NOT_FOUND", noUser.error?.includes("COWORKER_NOT_FOUND") ?? false, noUser.error);
   const bogus = await rpc(anon, "create_claim", { p_token: a.data.player_token, p_cell_index: 3, p_coworker_code: "ZZZ-ZZZ" });
   check("unknown code rejected", bogus.error?.includes("COWORKER_NOT_FOUND") ?? false, bogus.error);
 
   const bPoll = await poll(b.data.player_token);
   check("B sees incoming confirmation", bPoll.incoming.length === 1 && bPoll.incoming[0].from_name === "Alex Anders", bPoll.incoming);
+  check("poll me.username present, no emails leaked", bPoll.me.username === "priya" && !JSON.stringify(bPoll).includes("@"), bPoll.me);
   const notMine = await rpc(anon, "respond_claim", { p_token: c.data.player_token, p_claim_id: claim1.data.claim_id, p_accept: true });
   check("someone else can't confirm", !!notMine.error, notMine.error);
   const accept = await rpc(anon, "respond_claim", { p_token: b.data.player_token, p_claim_id: bPoll.incoming[0].claim_id, p_accept: true });

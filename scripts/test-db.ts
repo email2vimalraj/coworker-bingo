@@ -150,7 +150,9 @@ async function main() {
     Object.keys(live.session).sort(),
     ["code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "paused", "paused_at", "ranking_mode", "started_at", "status", "winners_count"],
   );
-  assert.deepEqual(Object.keys(live.me).sort(), ["correct", "full_name", "id", "lines", "player_code", "submitted_at"]);
+  assert.deepEqual(Object.keys(live.me).sort(), ["correct", "full_name", "id", "lines", "player_code", "submitted_at", "username"]);
+  assert.equal(live.me.username, "alice");
+  assert.ok(!JSON.stringify(live).includes("@"), "poll must not expose any email");
   assert.equal(live.board.length, 25);
   assert.equal(live.board[12].is_free, true);
   assert.equal(live.result, null);
@@ -171,6 +173,36 @@ async function main() {
   const c1 = await claim(A, 0, B.player_code.toLowerCase().replace("-", ""));
   await expectErr("CELL_TAKEN", claim(A, 0, C.player_code));
   ok("create_claim: self-scan, not found, cell taken, code normalization");
+
+  // --- claim by username / full email
+  await expectErr("SELF_SCAN", claim(A, 1, "  ALICE "));
+  await expectErr("SELF_SCAN", claim(A, 1, "Alice@Example.com"));
+  await expectErr("COWORKER_NOT_FOUND", claim(A, 1, "nobody"));
+  await expectErr("COWORKER_NOT_FOUND", claim(A, 1, "bob@other.com"));
+  await expectErr("COWORKER_NOT_FOUND", claim(A, 1, "   "));
+  const resolve = async (sessionId: string, input: string) =>
+    (await q("select _resolve_coworker($1, $2) as r", [sessionId, input]))[0].r;
+  assert.equal(await resolve(sid, "bob"), B.player_id);
+  assert.equal(await resolve(sid, "  BoB "), B.player_id);
+  assert.equal(await resolve(sid, "Bob@Example.com"), B.player_id);
+  assert.equal(await resolve(sid, B.player_code), B.player_id);
+  assert.equal(await resolve(sid, `https://x/play/${code}/scan?c=${B.player_code}`), B.player_id);
+  ok("username / email resolution: case-insensitive, trimmed, code still works");
+
+  const sess2 = await as("authenticated", ADMIN, () => rpc("create_session", ["Dup names", 600, "correct_then_time", false, 3, 5, prompts]));
+  const sid2 = sess2.id as string;
+  const j1 = await join("John A", "john@a.com", sess2.code as string);
+  const j2 = await join("John B", "john@b.com", sess2.code as string);
+  const j3 = await join("Jane", "jane@a.com", sess2.code as string);
+  await expectErr("USERNAME_AMBIGUOUS", resolve(sid2, "john"));
+  await expectErr("USERNAME_AMBIGUOUS", resolve(sid2, "JOHN"));
+  assert.equal(await resolve(sid2, "john@a.com"), j1.player_id);
+  assert.equal(await resolve(sid2, "John@B.com"), j2.player_id);
+  assert.equal(await resolve(sid2, j2.player_code), j2.player_id);
+  assert.equal(await resolve(sid2, "jane"), j3.player_id);
+  await expectErr("COWORKER_NOT_FOUND", resolve(sid2, "bob")); // bob is in another session
+  ok("ambiguous username -> USERNAME_AMBIGUOUS; full email and code still work");
+  await expectErr("permission denied", as("anon", null, () => resolve(sid2, "jane")));
 
   // Session was created with max 5 per coworker; drop to 1 for the limit test.
   await q("update sessions set max_squares_per_coworker = 1 where id=$1", [sid]);

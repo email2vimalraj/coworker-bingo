@@ -47,6 +47,7 @@ Before calling a change done: typecheck, lint, `npm test`, `npm run test:db`; pl
   - Session codes are 6 characters. Player codes are `XXX-XXX`.
   - Both use an alphabet without 0, O, 1, I or L.
   - A scanned value may be a raw code or a full QR URL with `?c=`. `normalize_player_code` in SQL and `lib/codes.ts` both accept either.
+  - A coworker can also be entered by username (email before `@`) or full email: `_resolve_coworker` tries code, then full email, then username (`USERNAME_AMBIGUOUS` if shared). Never put client-side format validation on that input, and never expose other players' emails.
 - **Claim statuses:** `pending` and `confirmed` are the only active ones. That rule drives the unique cell index, the coworker limit and `player_poll`. `rejected`, `expired` and `revoked` (undone by the host) are history only. Scores count `confirmed` only.
 - **Pauses:** a paused session stays `live` with `paused_at` set. Players can't claim, answer or cancel (`PAUSED`), and timers freeze at `ends_at − paused_at`. Every elapsed time (ranking, lines reach time, stats, the 2-minute claim expiry) subtracts the paused time recorded in `session_pauses`. Anything time-based on the client must take `paused_at` into account, or it fires during a pause (see `useMinuteWarning`).
 - **`_leaderboard()` cost:** it runs on every poll from every phone once the game ends. Keep it set-based. Calling a per-row SQL function such as `_elapsed_at` made it 10× slower and caused 55% of polls to fail with 450 players (fixed in 0011). Load-test across the end with `--after-end`.

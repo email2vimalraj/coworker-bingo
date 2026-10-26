@@ -1,28 +1,22 @@
 "use client";
 import { useState } from "react";
-import { normalizePlayerCode } from "@/lib/codes";
 import { Button, inputClass } from "@/components/ui";
 
-/** Manual coworker code input. Passes the raw text on (the server also parses URLs). */
+/** Manual coworker code / username / email input. Passes the raw text on (the server also parses URLs). */
 export function CodeEntry({
   onSubmit,
   busy,
-  label = "Or enter your coworker's code",
+  label = "Or enter your coworker's code or username",
 }: {
   onSubmit: (raw: string) => void;
   busy?: boolean;
   label?: string;
 }) {
   const [value, setValue] = useState("");
-  const [err, setErr] = useState<string | null>(null);
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!normalizePlayerCode(value)) {
-      setErr("Codes look like ABC-DEF (6 letters and numbers).");
-      return;
-    }
-    setErr(null);
-    onSubmit(value);
+    if (!value.trim()) return;
+    onSubmit(value.trim());
   }
   return (
     <form onSubmit={submit} className="space-y-2">
@@ -32,11 +26,12 @@ export function CodeEntry({
       <div className="flex gap-2">
         <input
           id="coworker-code"
-          className={`${inputClass} font-mono uppercase tracking-widest`}
-          placeholder="ABC-DEF"
+          className={inputClass}
+          placeholder="QX7-4PM or player1"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          autoCapitalize="characters"
+          autoCapitalize="none"
+          inputMode="email"
           autoCorrect="off"
           autoComplete="off"
           spellCheck={false}
@@ -46,7 +41,6 @@ export function CodeEntry({
           {busy ? "..." : "Go"}
         </Button>
       </div>
-      {err ? <p className="text-sm font-medium text-red-600">{err}</p> : null}
     </form>
   );
 }

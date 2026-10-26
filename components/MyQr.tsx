@@ -10,11 +10,13 @@ import { usePollBoost } from "@/components/PlayerProvider";
 export function MyQr({
   sessionCode,
   playerCode,
+  username,
   size = 240,
   big = false,
 }: {
   sessionCode: string;
   playerCode: string;
+  username?: string;
   size?: number;
   big?: boolean;
 }) {
@@ -33,6 +35,14 @@ export function MyQr({
         {playerCode}
       </p>
       <CopyButton text={playerCode} label="Copy code" />
+      {username ? (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-sm font-semibold text-slate-500">
+            Username: <span className="font-mono text-slate-900">{username}</span>
+          </p>
+          <CopyButton text={username} label="Copy username" />
+        </div>
+      ) : null}
     </div>
   );
 }

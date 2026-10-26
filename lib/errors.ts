@@ -7,7 +7,10 @@ export const ERROR_MESSAGES: Record<string, string> = {
   TIME_UP: "Time's up! The game is over.",
   ALREADY_SUBMITTED: "You've already submitted your board.",
   SELF_SCAN: "That's your own code. Find a coworker to scan instead!",
-  COWORKER_NOT_FOUND: "We couldn't find that coworker in this session. Check the code and try again.",
+  COWORKER_NOT_FOUND:
+    "We couldn't find that coworker in this session. Check their code or username and try again.",
+  USERNAME_AMBIGUOUS:
+    "More than one player has that username. Use their code or full email instead.",
   COWORKER_LIMIT:
     "You've already used this coworker the maximum number of times. Find someone else!",
   CELL_TAKEN: "That square is already waiting on a coworker or filled in.",

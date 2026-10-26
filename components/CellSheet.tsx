@@ -102,7 +102,7 @@ export function CellSheet({
                 <CodeEntry onSubmit={submitCode} busy={busy} />
               ) : (
                 <Button variant="secondary" className="w-full" onClick={() => setEnterCode(true)}>
-                  Enter code
+                  Code or username
                 </Button>
               )}
             </>

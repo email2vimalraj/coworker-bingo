@@ -11,7 +11,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0011_review_fixes.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0012_claim_by_username.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
 3. Authentication > Providers: make sure **Email** is enabled. For a small admin team, turn off "Allow new users to sign up" (Authentication > Sign In / Providers) so only users you create can log in.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
@@ -69,7 +69,7 @@ Local extras: Supabase Studio (browse tables) at http://127.0.0.1:54323.
 ## Testing on localhost
 
 - Open several **incognito/private windows** (or different browsers/profiles): each one is a separate player because the player token lives in localStorage. Admin in one normal window.
-- Join each player with a distinct email (a duplicate email is rejected), start the game as admin, then on a player's board tap a square > **Enter code** and paste another player's code. Each player's code is shown on their lobby screen and `/play/CODE/me` with a copy button, so you do not need a camera.
+- Join each player with a distinct email (a duplicate email is rejected), start the game as admin, then on a player's board tap a square > **Enter code** and paste another player's code or type their username (the part of their email before the `@`, e.g. `player1`). Each player's code and username are shown on their lobby screen and `/play/CODE/me` with a copy button, so you do not need a camera.
 - The camera scanner needs HTTPS (`localhost` only counts on the same machine). To test scanning with real phones use a Vercel preview URL (set `NEXT_PUBLIC_APP_URL` for that environment accordingly) or an HTTPS tunnel.
 - `NEXT_PUBLIC_APP_URL` should match the URL players actually open, otherwise join QR codes point to the wrong host.
 
@@ -107,6 +107,7 @@ Steps: create a session in the admin UI on the **staging** project, run the scri
 
 - Session code: 6 chars, e.g. `K7PQ2X`. Player code: `XXX-XXX`. Alphabet excludes `0 O 1 I L`.
 - `create_claim` accepts the coworker code case-insensitively, with or without the dash, or a full URL containing `c=<code>`. Parsing is done in SQL (`normalize_player_code`) and mirrored in `lib/codes.ts`, so the client can pass raw scanner output.
+- `create_claim` also accepts the coworker's username (email before `@`, case-insensitive) or full email. Resolution order in `_resolve_coworker`: code, then full email (if it contains `@`), then username. A username shared by several players raises `USERNAME_AMBIGUOUS`.
 - QR content: `{origin}/play/{sessionCode}/scan?c={playerCode}`.
 
 ## RPCs
@@ -114,7 +115,7 @@ Steps: create a session in the admin UI on the **staging** project, run the scri
 Player (anon): `join_session`, `player_poll`, `create_claim`, `respond_claim`, `cancel_claim`, `submit_board`.
 Admin (authenticated + `is_admin()`): `create_session`, `start_session`, `end_session`, `session_leaderboard`, `session_activity`, plus `server_now()` for the admin clock offset. Deleting a session is a normal table delete (cascades).
 
-Errors are raised as the exception message: `INVALID_INPUT`, `EMAIL_TAKEN`, `SESSION_NOT_FOUND`, `SESSION_ENDED`, `NOT_LIVE`, `TIME_UP`, `ALREADY_SUBMITTED`, `SELF_SCAN`, `COWORKER_NOT_FOUND`, `COWORKER_LIMIT`, `CELL_TAKEN`, `NOT_YOURS`, `INVALID_TOKEN`, `CLAIM_NOT_FOUND`, `CLAIM_NOT_PENDING`, `NOT_ADMIN`, `PROMPT_COUNT`, `ALREADY_STARTED`, `CODE_GENERATION_FAILED`.
+Errors are raised as the exception message: `INVALID_INPUT`, `EMAIL_TAKEN`, `SESSION_NOT_FOUND`, `SESSION_ENDED`, `NOT_LIVE`, `TIME_UP`, `ALREADY_SUBMITTED`, `SELF_SCAN`, `COWORKER_NOT_FOUND`, `USERNAME_AMBIGUOUS`, `COWORKER_LIMIT`, `CELL_TAKEN`, `NOT_YOURS`, `INVALID_TOKEN`, `CLAIM_NOT_FOUND`, `CLAIM_NOT_PENDING`, `NOT_ADMIN`, `PROMPT_COUNT`, `ALREADY_STARTED`, `CODE_GENERATION_FAILED`.
 
 ## Ranking
 

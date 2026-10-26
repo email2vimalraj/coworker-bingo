@@ -127,7 +127,7 @@ export default function PlayPage() {
         </Card>
         <Card>
           <p className="mb-3 text-center font-semibold">Your QR: coworkers scan this to confirm squares</p>
-          <MyQr sessionCode={sessionCode} playerCode={me.player_code} />
+          <MyQr sessionCode={sessionCode} playerCode={me.player_code} username={me.username} />
         </Card>
       </main>
     );

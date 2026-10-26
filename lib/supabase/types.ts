@@ -55,6 +55,7 @@ export interface PollMe {
   id: string;
   full_name: string;
   player_code: string;
+  username: string;
   submitted_at: string | null;
   correct: number;
   lines: number;
