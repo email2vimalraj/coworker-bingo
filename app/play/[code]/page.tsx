@@ -6,6 +6,7 @@ import { usePlayer } from "@/components/PlayerProvider";
 import { BingoBoard } from "@/components/BingoBoard";
 import { CellSheet } from "@/components/CellSheet";
 import { MyQr } from "@/components/MyQr";
+import { SoundToggle } from "@/components/SoundToggle";
 import { Timer } from "@/components/Timer";
 import { Button, Card, ErrorBox } from "@/components/ui";
 import { playerApi } from "@/lib/api";
@@ -79,7 +80,8 @@ export default function PlayPage() {
   if (session.status === "lobby") {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 p-4">
-        <header className="pt-4 text-center">
+        <header className="relative pt-4 text-center">
+          <SoundToggle className="absolute right-0 top-0" />
           <p className="text-sm font-semibold uppercase tracking-wide text-accent">{session.name}</p>
           <h1 className="mt-1 text-3xl font-extrabold">Hi {me.full_name.split(" ")[0]}!</h1>
         </header>
@@ -161,6 +163,7 @@ export default function PlayPage() {
           <p className="text-[11px] font-semibold uppercase text-slate-500">Score</p>
           <p className="text-2xl font-extrabold tabular-nums">{me.correct}/24</p>
         </div>
+        <SoundToggle />
         <Link
           href={`/play/${sessionCode}/me`}
           className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-3 text-sm font-semibold"

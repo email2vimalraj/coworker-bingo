@@ -12,6 +12,7 @@ import { playerApi } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { clearPlayer, loadPlayer } from "@/lib/playerStorage";
 import { usePlayerPoll } from "@/lib/usePlayerPoll";
+import { useAlerts } from "@/lib/useAlerts";
 import { normalizeSessionCode } from "@/lib/codes";
 import type { PollResponse } from "@/lib/supabase/types";
 import { ConfirmSheet } from "@/components/ConfirmSheet";
@@ -62,6 +63,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     token,
     boosters > 0,
   );
+
+  useAlerts(data ?? null);
 
   useEffect(() => {
     const stored = loadPlayer(sessionCode);
