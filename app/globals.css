@@ -37,3 +37,24 @@ body {
 .animate-sheet-up {
   animation: sheet-up 0.18s ease-out;
 }
+
+/* Last-minute timer pulse (disabled for reduced motion). */
+@keyframes timer-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.timer-warning {
+  animation: timer-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-warning {
+    animation: none;
+  }
+}

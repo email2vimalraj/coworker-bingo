@@ -102,7 +102,7 @@ export default function SessionDashboard() {
               {status === "lobby" ? "Not started" : status}
             </span>
             <span
-              className={`font-mono text-5xl font-extrabold tabular-nums ${status === "live" && remaining !== null && remaining <= 60_000 ? "text-red-600" : ""}`}
+              className={`font-mono text-5xl font-extrabold tabular-nums ${status === "live" && remaining !== null && remaining <= 60_000 ? "timer-warning text-red-600" : ""}`}
             >
               {status === "live" && remaining !== null
                 ? formatClock(remaining)

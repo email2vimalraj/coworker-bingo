@@ -62,7 +62,7 @@ export default function PresentPage() {
 
         <section className="flex min-w-0 flex-col gap-[2vmin]">
           <p
-            className={`text-center font-mono text-[clamp(4rem,20vmin,18rem)] font-extrabold leading-none tabular-nums ${urgent ? "text-red-400" : ""}`}
+            className={`text-center font-mono text-[clamp(4rem,20vmin,18rem)] font-extrabold leading-none tabular-nums ${urgent ? "timer-warning text-red-400" : ""}`}
           >
             {clock}
           </p>

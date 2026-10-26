@@ -6,6 +6,8 @@ import { usePlayer } from "@/components/PlayerProvider";
 import { BingoBoard } from "@/components/BingoBoard";
 import { CellSheet } from "@/components/CellSheet";
 import { MyQr } from "@/components/MyQr";
+import { notify } from "@/lib/alerts";
+import { useMinuteWarning } from "@/lib/useMinuteWarning";
 import { SoundToggle } from "@/components/SoundToggle";
 import { Timer } from "@/components/Timer";
 import { Button, Card, ErrorBox } from "@/components/ui";
@@ -26,6 +28,12 @@ export default function PlayPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const seen = useRef<Set<string> | null>(null);
+
+  useMinuteWarning(session.status === "live" ? session.ends_at : null, offset, () => {
+    notify("warning");
+    setToast("1 minute left!");
+    window.setTimeout(() => setToast(null), 4000);
+  });
 
   const submitted = !!me.submitted_at;
   const timeUp = session.status === "live" && remaining !== null && remaining <= 0;
