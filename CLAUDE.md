@@ -15,7 +15,7 @@ npx supabase migration up   # apply new migration files without wiping data
 
 npm run typecheck && npm run lint && npm test   # unit tests: lib/**/*.test.ts (vitest)
 npm run test:db        # runs all migrations in PGlite with a stubbed auth schema, ~30 SQL checks
-npm run e2e:local      # 39 checks against the running local Supabase (RPCs, RLS, realtime, delete)
+npm run e2e:local      # ~80 checks against the running local Supabase (RPCs, RLS, realtime, delete)
 npm run load-test -- --session DEMO23 --players 450 --minutes 2 [--poll-ms 1000]
 ```
 
@@ -47,6 +47,9 @@ Before calling a change done: typecheck, lint, `npm test`, `npm run test:db`; pl
   - Session codes are 6 characters. Player codes are `XXX-XXX`.
   - Both use an alphabet without 0, O, 1, I or L.
   - A scanned value may be a raw code or a full QR URL with `?c=`. `normalize_player_code` in SQL and `lib/codes.ts` both accept either.
+- **Claim statuses:** `pending` and `confirmed` are the only active ones. That rule drives the unique cell index, the coworker limit and `player_poll`. `rejected`, `expired` and `revoked` (undone by the host) are history only. Scores count `confirmed` only.
+- **Pauses:** a paused session stays `live` with `paused_at` set. Players can't claim, answer or cancel (`PAUSED`), and timers freeze at `ends_at − paused_at`. Every elapsed time (ranking, lines reach time, stats, the 2-minute claim expiry) subtracts the paused time recorded in `session_pauses`. Anything time-based on the client must take `paused_at` into account, or it fires during a pause (see `useMinuteWarning`).
+- **`_leaderboard()` cost:** it runs on every poll from every phone once the game ends. Keep it set-based. Calling a per-row SQL function such as `_elapsed_at` made it 10× slower and caused 55% of polls to fail with 450 players (fixed in 0011). Load-test across the end with `--after-end`.
 - **Concurrency:** claim RPCs lock the scanner's player row first, then the claim. Keep that order in any new RPC, or two requests can deadlock.
 - **Tests:** vitest has no `@/` alias, so test files and anything they import use relative paths. Keep logic you want to test out of files that import the Supabase client.
 - **Realtime warm-up:** after `SUBSCRIBED`, `postgres_changes` needs a few seconds before events flow. Tests must wait (`e2e-local.ts` waits 6s).
