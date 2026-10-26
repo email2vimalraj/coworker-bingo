@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePlayer } from "@/components/PlayerProvider";
 import { RequestPopupToggle } from "@/components/RequestPopupToggle";
 import { Button } from "@/components/ui";
@@ -44,11 +45,19 @@ function HelpSheet({ onClose }: { onClose: () => void }) {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Stop the board behind the sheet from scrolling.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-900/40" onClick={onClose} role="dialog" aria-modal="true" aria-label="How to play">
+  // Portal to <body>: the sticky header uses backdrop-blur, which would otherwise
+  // trap this fixed overlay inside the header's box.
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-900/60" onClick={onClose} role="dialog" aria-modal="true" aria-label="How to play">
       <div
         className="animate-sheet-up mx-auto max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -71,6 +80,7 @@ function HelpSheet({ onClose }: { onClose: () => void }) {
           Close
         </Button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
