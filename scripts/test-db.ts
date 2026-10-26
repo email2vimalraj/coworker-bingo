@@ -687,8 +687,6 @@ async function main() {
   {
     const sess3 = await as("authenticated", ADMIN, () => rpc("create_session", ["Edit me", 300, "correct_then_time", false, 1, 1, prompts]));
     const E = await as("anon", null, () => rpc("join_session", [sess3.code, "Eve", "eve@example.com"]) as unknown as Promise<Joined>);
-    const idsBefore = await q("select id, position from session_prompts where session_id=$1 order by position", [sess3.id]);
-    const boardBefore = await q("select cell_index, prompt_id from boards where player_id=$1 order by 1", [E.player_id]);
     const newPrompts = prompts.map((p) => `${p} edited`);
     const upd = (id: unknown, ps = newPrompts, name = "Renamed") =>
       rpc("update_session", [id, name, 900, "full_card_fastest", true, 2, 3, ["acme.com"], ps]);
@@ -701,6 +699,8 @@ async function main() {
     await as("authenticated", ADMIN, async () => {
       await expectErr("SESSION_NOT_FOUND", upd(crypto.randomUUID()));
       await expectErr("PROMPT_COUNT", upd(sess3.id, newPrompts.slice(0, 23)));
+      await expectErr("PROMPT_COUNT", upd(sess3.id, [...newPrompts, ...Array.from({ length: 177 }, (_, i) => `extra ${i}`)]));
+      await expectErr("DUPLICATE_PROMPT", upd(sess3.id, [...newPrompts.slice(0, 23), ` ${newPrompts[0].toUpperCase()} `]));
       await expectErr("INVALID_INPUT", upd(sess3.id, [...newPrompts.slice(0, 23), " "]));
       await expectErr("INVALID_INPUT", upd(sess3.id, newPrompts, " "));
       await expectErr("INVALID_INPUT", rpc("update_session", [sess3.id, "X", 10, "correct_then_time", false, 1, 1, [], newPrompts]));
@@ -710,11 +710,10 @@ async function main() {
     const row = (await q("select name, duration_seconds, ranking_mode::text as m, require_full_card, winners_count, max_squares_per_coworker, allowed_email_domains from sessions where id=$1", [sess3.id]))[0];
     assert.deepEqual(row, { name: "Renamed", duration_seconds: 900, m: "full_card_fastest", require_full_card: true, winners_count: 2, max_squares_per_coworker: 3, allowed_email_domains: ["acme.com"] });
     const idsAfter = await q("select id, position, text from session_prompts where session_id=$1 order by position", [sess3.id]);
-    assert.deepEqual(idsAfter.map((r) => [r.id, r.position]), idsBefore.map((r) => [r.id, r.position]));
+    assert.equal(idsAfter.length, 24);
     assert.ok(idsAfter.every((r) => String(r.text).endsWith(" edited")));
-    const boardAfter = await q("select cell_index, prompt_id from boards where player_id=$1 order by 1", [E.player_id]);
-    assert.deepEqual(boardAfter, boardBefore);
     const ep = await as("anon", null, () => rpc("player_poll", [E.player_token]) as unknown as Promise<Poll>);
+    assert.equal(ep.board.length, 25);
     assert.ok(ep.board.filter((c) => !c.is_free).every((c) => String(c.prompt).endsWith(" edited")));
     await as("authenticated", ADMIN, async () => {
       await rpc("start_session", [sess3.id]);
@@ -722,7 +721,58 @@ async function main() {
       await rpc("end_session", [sess3.id]);
       await expectErr("ALREADY_STARTED", upd(sess3.id));
     });
-    ok("update_session: lobby only, prompts updated in place (ids and boards stay valid), validation");
+    ok("update_session: lobby only, prompts replaced and joined boards rebuilt, validation");
+  }
+
+  // ---- Prompt pool: 24-200 prompts, each board gets a random 24 ----
+  {
+    const pool = Array.from({ length: 50 }, (_, i) => `Pool ${i + 1}`);
+    const mk = (ps: string[]) => rpc("create_session", ["Pool game", 600, "correct_then_time", false, 3, 5, ps]);
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("PROMPT_COUNT", mk(pool.slice(0, 23)));
+      await expectErr("PROMPT_COUNT", mk(Array.from({ length: 201 }, (_, i) => `P${i}`)));
+      await expectErr("DUPLICATE_PROMPT", mk([...pool.slice(0, 23), ` ${pool[0].toLowerCase()} `]));
+      await expectErr("INVALID_INPUT", mk([...pool.slice(0, 23), "x".repeat(121)]));
+      await mk(Array.from({ length: 200 }, (_, i) => `P${i}`));
+    });
+    const ps = await as("authenticated", ADMIN, () => mk(pool));
+    assert.equal((await q("select count(*)::int as n from session_prompts where session_id=$1", [ps.id]))[0].n, 50);
+    const joined: Joined[] = [];
+    for (let i = 0; i < 4; i++) {
+      joined.push(await as("anon", null, () => rpc("join_session", [ps.code, `Pool P${i}`, `pool${i}@example.com`]) as unknown as Promise<Joined>));
+    }
+    const boardOf = async (j: Joined) => (await q(
+      "select b.cell_index, sp.text from boards b left join session_prompts sp on sp.id = b.prompt_id where b.player_id=$1 order by 1", [j.player_id]));
+    const checkBoard = (rows: Row[], from: string[]) => {
+      assert.equal(rows.length, 25);
+      assert.deepEqual(rows.map((r) => r.cell_index), Array.from({ length: 25 }, (_, i) => i));
+      assert.equal(rows[12].text, null);
+      const texts = rows.filter((r) => r.cell_index !== 12).map((r) => String(r.text));
+      assert.equal(new Set(texts).size, 24);
+      assert.ok(texts.every((t) => from.includes(t)));
+      return texts;
+    };
+    const first = [];
+    for (const j of joined) first.push(checkBoard(await boardOf(j), pool).join("|"));
+    assert.ok(new Set(first).size > 1, "boards differ across players");
+    // a poll shows 24 prompts + FREE
+    const pl = await as("anon", null, () => rpc("player_poll", [joined[0].player_token]) as unknown as Promise<Poll>);
+    assert.equal(pl.board.filter((c) => !c.is_free).length, 24);
+    // lobby edit with joined players rebuilds all boards from the new pool
+    const pool2 = Array.from({ length: 30 }, (_, i) => `Second ${i + 1}`);
+    await as("authenticated", ADMIN, () => rpc("update_session", [ps.id, "Pool game", 600, "correct_then_time", false, 3, 5, [], pool2, 1, true]));
+    const second = [];
+    for (const j of joined) second.push(checkBoard(await boardOf(j), pool2).join("|"));
+    assert.equal((await q("select count(*)::int as n from boards b join players p on p.id=b.player_id where p.session_id=$1", [ps.id]))[0].n, 100);
+    assert.ok(new Set(second).size > 1, "rebuilt boards differ across players");
+    // stats: boards_count per prompt (30 prompts, 4 boards of 24 = 96 slots)
+    await as("authenticated", ADMIN, async () => {
+      const st = await rpc("session_stats", [ps.id]) as unknown as { prompts: { boards_count: number }[] };
+      assert.equal(st.prompts.length, 30);
+      assert.equal(st.prompts.reduce((n, x) => n + x.boards_count, 0), 96);
+      await rpc("start_session", [ps.id]);
+    });
+    ok("prompt pool: 24-200 validated, duplicates rejected, 24-of-pool boards, edit rebuilds boards, start works");
   }
 
   // ---- Item 6: bingo lines mode ----

@@ -80,6 +80,8 @@ export default function SessionStatsPage() {
 
   const { participation: p, squares: sq, timing, prompts, people } = stats;
   const marks = highlightPrompts(prompts);
+  // With a prompt pool each prompt is only on some boards, so show how many.
+  const showBoards = prompts.length > 24;
   const maxFound = Math.max(0, ...prompts.map((x) => x.found_count));
   const maxDist = Math.max(0, ...sq.distribution.map((d) => d.players));
   const maxConn = Math.max(0, ...people.top_connected.map((x) => x.connections));
@@ -89,6 +91,7 @@ export default function SessionStatsPage() {
       <div>
         {back}
         <h1 className="break-words text-2xl font-extrabold">Stats: {name}</h1>
+        {showBoards ? <p className="text-sm text-slate-600">{prompts.length} prompts, 24 per board</p> : null}
         {status && status !== "ended" ? (
           <p className="mt-1 rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
             Final numbers once the game has ended
@@ -157,6 +160,7 @@ export default function SessionStatsPage() {
               <tr>
                 <th className="px-4 py-2">Prompt</th>
                 <th className="px-2 py-2">Found</th>
+                {showBoards ? <th className="px-2 py-2">On boards</th> : null}
                 <th className="px-2 py-2">Rejected</th>
                 <th className="px-4 py-2">Reject %</th>
               </tr>
@@ -179,6 +183,7 @@ export default function SessionStatsPage() {
                       <span className="tabular-nums font-semibold">{r.found_count}</span>
                     </div>
                   </td>
+                  {showBoards ? <td className="px-2 py-2 tabular-nums">{r.boards_count ?? 0}</td> : null}
                   <td className="px-2 py-2 tabular-nums">{r.rejected_count}</td>
                   <td className="px-4 py-2 tabular-nums">{formatPercent(r.rejection_rate)}</td>
                 </tr>

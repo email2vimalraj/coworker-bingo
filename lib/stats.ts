@@ -6,6 +6,8 @@ export interface PromptStat {
   position: number;
   found_count: number;
   rejected_count: number;
+  /** Boards that carry this prompt (with a prompt pool, not every board has every prompt). */
+  boards_count?: number;
   rejection_rate: number;
 }
 

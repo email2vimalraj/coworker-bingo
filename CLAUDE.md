@@ -1,6 +1,6 @@
 # Coworker Bingo
 
-"Get to know your coworker" bingo for live events of 450+ players. Players join by QR, scan coworkers' QR codes to fill a 5×5 board (24 prompts + FREE centre), and the scanned coworker confirms Yes/No on their own phone. Admins create timed sessions with ranking rules and watch a live dashboard.
+"Get to know your coworker" bingo for live events of 450+ players. Players join by QR, scan coworkers' QR codes to fill a 5×5 board (24 prompts + FREE centre; a session can hold a pool of 24 to 200 prompts and each player gets a random 24), and the scanned coworker confirms Yes/No on their own phone. Admins create timed sessions with ranking rules and watch a live dashboard.
 
 Stack: Next.js 15 App Router + TypeScript + Tailwind (no component library), Supabase (Postgres, Auth for admins only, Realtime for admin screens only). Hosting target: Vercel Hobby + Supabase Free.
 
@@ -49,6 +49,7 @@ Before calling a change done: typecheck, lint, `npm test`, `npm run test:db`; pl
   - A scanned value may be a raw code or a full QR URL with `?c=`. `normalize_player_code` in SQL and `lib/codes.ts` both accept either.
   - A coworker can also be entered by username (email before `@`) or full email: `_resolve_coworker` tries code, then full email, then username (`USERNAME_AMBIGUOUS` if shared). Per session, `sessions.allow_username_claims` (0013) turns the email/username steps off (gate lives in `_resolve_coworker`). Never put client-side format validation on that input, and never expose other players' emails.
   - Players can answer requests from the pop-up (`ConfirmSheet`, can be turned off in a localStorage preference) or the `/play/CODE/requests` page; rules text for the help sheet comes from `lib/rules.ts`.
+- **Prompt pool (0014):** `session_prompts` holds the pool (24–200, positions 0–199); `join_session` deals each player a random 24 into cells 0–24 except 12. Per-board logic (scores, lines, 24/24 = full card) still assumes 24. `update_session` in the lobby deletes and re-inserts prompts and rebuilds all joined players' boards. Client rules live in `lib/promptList.ts`.
 - **Claim statuses:** `pending` and `confirmed` are the only active ones. That rule drives the unique cell index, the coworker limit and `player_poll`. `rejected`, `expired` and `revoked` (undone by the host) are history only. Scores count `confirmed` only.
 - **Pauses:** a paused session stays `live` with `paused_at` set. Players can't claim, answer or cancel (`PAUSED`), and timers freeze at `ends_at − paused_at`. Every elapsed time (ranking, lines reach time, stats, the 2-minute claim expiry) subtracts the paused time recorded in `session_pauses`. Anything time-based on the client must take `paused_at` into account, or it fires during a pause (see `useMinuteWarning`).
 - **`_leaderboard()` cost:** it runs on every poll from every phone once the game ends. Keep it set-based. Calling a per-row SQL function such as `_elapsed_at` made it 10× slower and caused 55% of polls to fail with 450 players (fixed in 0011). Load-test across the end with `--after-end`.

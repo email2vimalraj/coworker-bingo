@@ -298,6 +298,56 @@ async function main() {
     await admin.from("sessions").delete().eq("id", ed.data.id);
   }
 
+  // ---- Prompt pool: 50 prompts, each player gets a random 24 ----
+  {
+    const pool = Array.from({ length: 50 }, (_, i) => `E2E pool ${i + 1}`);
+    const base = {
+      p_name: "E2E pool", p_duration_seconds: 300, p_ranking_mode: "correct_then_time",
+      p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 3,
+    };
+    const few = await rpc(admin, "create_session", { ...base, p_prompts: pool.slice(0, 23) });
+    check("pool: 23 prompts -> PROMPT_COUNT", few.error?.includes("PROMPT_COUNT") ?? false, few.error);
+    const lots = await rpc(admin, "create_session", { ...base, p_prompts: Array.from({ length: 201 }, (_, i) => `x${i}`) });
+    check("pool: 201 prompts -> PROMPT_COUNT", lots.error?.includes("PROMPT_COUNT") ?? false, lots.error);
+    const dup = await rpc(admin, "create_session", { ...base, p_prompts: [...pool.slice(0, 23), ` ${pool[0].toUpperCase()}`] });
+    check("pool: duplicate -> DUPLICATE_PROMPT", dup.error?.includes("DUPLICATE_PROMPT") ?? false, dup.error);
+    const ps = await rpc<{ id: string; code: string }>(admin, "create_session", { ...base, p_prompts: pool });
+    check("pool: create_session with 50 prompts", !ps.error && !!ps.data?.code, ps.error);
+    const joinP = async (n: number) =>
+      (await rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: ps.data.code, p_full_name: `Pool ${n}`, p_email: `pool${n}@example.com` })).data;
+    const players = [await joinP(1), await joinP(2), await joinP(3)];
+    const boardPrompts = async (pl: { player_token: string }) => {
+      return (await rpc<{ board: (Cell & { prompt: string | null })[] }>(anon, "player_poll", { p_token: pl.player_token })).data.board;
+    };
+    const verify = async (from: string[]) => {
+      const sigs: string[] = [];
+      let good = true;
+      for (const pl of players) {
+        const b = await boardPrompts(pl);
+        const texts = b.filter((c) => !c.is_free).map((c) => c.prompt as string);
+        good = good && b.length === 25 && b[12].is_free && texts.length === 24 && new Set(texts).size === 24 && texts.every((t) => from.includes(t));
+        sigs.push(texts.join("|"));
+      }
+      return { good, differ: new Set(sigs).size > 1 };
+    };
+    const v1 = await verify(pool);
+    check("pool: each board has 24 distinct prompts from the pool + FREE at 12", v1.good);
+    check("pool: boards differ across players", v1.differ);
+    const pool2 = Array.from({ length: 36 }, (_, i) => `E2E second ${i + 1}`);
+    const re = await rpc(admin, "update_session", { p_session_id: ps.data.id, ...base, p_allowed_email_domains: [], p_prompts: pool2 });
+    check("pool: update_session with joined players", !re.error, re.error);
+    const v2 = await verify(pool2);
+    check("pool: boards rebuilt from the new pool", v2.good && v2.differ);
+    const start = await rpc(admin, "start_session", { p_session_id: ps.data.id });
+    check("pool: start_session works", !start.error, start.error);
+    const cl = await rpc(anon, "create_claim", { p_token: players[0].player_token, p_cell_index: 0, p_coworker_code: players[1].player_code });
+    check("pool: claim works", !cl.error, cl.error);
+    const st = await rpc<{ prompts: { boards_count: number }[] }>(admin, "session_stats", { p_session_id: ps.data.id });
+    check("pool: session_stats reports boards_count per prompt (36 prompts, 72 slots)",
+      st.data?.prompts?.length === 36 && st.data.prompts.reduce((n, x) => n + x.boards_count, 0) === 72, st.error);
+    await admin.from("sessions").delete().eq("id", ps.data.id);
+  }
+
   // ---- Username option (allow_username_claims) ----
   {
     const mk = async (flag: boolean | undefined, name: string) => {

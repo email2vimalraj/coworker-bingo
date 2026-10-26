@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { rpc } from "@/lib/api";
+import { getSupabase } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/errors";
 import { getAppOrigin } from "@/lib/appUrl";
 import { joinUrl } from "@/lib/codes";
@@ -33,6 +34,7 @@ export default function SessionDashboard() {
   const router = useRouter();
   const { session, rows, pending, activity, offsetMs, error, loading, reload } = useSessionDashboard(id);
   const [origin, setOrigin] = useState("");
+  const [promptCount, setPromptCount] = useState(24);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -41,6 +43,15 @@ export default function SessionDashboard() {
   const remaining = useCountdown(session?.ends_at ?? null, offsetMs, session?.paused_at ?? null);
 
   useEffect(() => setOrigin(getAppOrigin()), []);
+  useEffect(() => {
+    getSupabase()
+      .from("session_prompts")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", id)
+      .then(({ count }) => {
+        if (count) setPromptCount(count);
+      });
+  }, [id]);
 
   if (loading) return <Spinner />;
   if (!session) {
@@ -212,6 +223,7 @@ export default function SessionDashboard() {
             {session.require_full_card && session.ranking_mode !== "lines" ? ", full card required" : ""} &middot; {session.winners_count} winner
             {session.winners_count === 1 ? "" : "s"} &middot; {session.max_squares_per_coworker} square
             {session.max_squares_per_coworker === 1 ? "" : "s"} per coworker
+            {promptCount > 24 ? ` · ${promptCount} prompts, 24 per board` : ""}
           </p>
           <p className="text-sm text-slate-600">
             {session.allowed_email_domains?.length

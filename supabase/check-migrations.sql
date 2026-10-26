@@ -15,6 +15,7 @@ from (values
   ('0010_stats_exclude_pauses.sql',  coalesce((select prosrc like '%_elapsed_at%' from pg_proc where oid = to_regprocedure('public.session_stats(uuid)')), false)),
   ('0011_review_fixes.sql',          coalesce((select prosrc ilike '%get diagnostics%' from pg_proc where oid = to_regprocedure('public.admin_remove(uuid)')), false)),
   ('0012_claim_by_username.sql',     to_regprocedure('public._resolve_coworker(uuid,text)') is not null),
-  ('0013_username_option.sql',      exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'allow_username_claims'))
+  ('0013_username_option.sql',      exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'allow_username_claims')),
+  ('0014_prompt_pool.sql',          coalesce((select prosrc like '%DUPLICATE_PROMPT%' from pg_proc where oid = to_regprocedure('public.update_session(uuid,text,integer,ranking_mode,boolean,integer,integer,text[],text[],integer,boolean)')), false))
 ) as m(file, applied)
 order by m.file;

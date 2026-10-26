@@ -1,4 +1,4 @@
-/** Default bank of friendly, inclusive prompts. Admins pick/edit 24 of them. */
+/** Default bank of friendly, inclusive prompts. Admins pick/edit them (at least 24). */
 export const DEFAULT_PROMPTS: readonly string[] = [
   "Has a pet",
   "Speaks 3+ languages",

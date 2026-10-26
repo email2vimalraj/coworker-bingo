@@ -11,7 +11,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0013_username_option.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0014_prompt_pool.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
 3. Authentication > Providers: make sure **Email** is enabled. For a small admin team, turn off "Allow new users to sign up" (Authentication > Sign In / Providers) so only users you create can log in.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
@@ -107,6 +107,7 @@ Steps: create a session in the admin UI on the **staging** project, run the scri
 
 - Session code: 6 chars, e.g. `K7PQ2X`. Player code: `XXX-XXX`. Alphabet excludes `0 O 1 I L`.
 - `create_claim` accepts the coworker code case-insensitively, with or without the dash, or a full URL containing `c=<code>`. Parsing is done in SQL (`normalize_player_code`) and mirrored in `lib/codes.ts`, so the client can pass raw scanner output.
+- **Prompt pool (migration 0014):** a session has 24 to 200 prompts (case-insensitive duplicates raise `DUPLICATE_PROMPT`). Each player gets a random 24 of them, in random order, around the FREE centre (`join_session`). Editing the prompts in the lobby replaces the pool and rebuilds every joined player's board. `session_stats` reports `boards_count` per prompt.
 - `create_claim` also accepts the coworker's username (email before `@`, case-insensitive) or full email. Resolution order in `_resolve_coworker`: code, then full email (if it contains `@`), then username. A username shared by several players raises `USERNAME_AMBIGUOUS`. Admins can switch username/email lookup off per session (`sessions.allow_username_claims`, migration 0013, checkbox in the session form); when off, only a player code or QR URL works and everything else is `COWORKER_NOT_FOUND`.
 - QR content: `{origin}/play/{sessionCode}/scan?c={playerCode}`.
 

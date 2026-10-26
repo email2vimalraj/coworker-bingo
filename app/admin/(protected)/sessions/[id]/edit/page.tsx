@@ -32,8 +32,7 @@ export default function EditSession() {
         const row = (s.data as SessionRow | null) ?? null;
         setSession(row);
         if (row) {
-          const prompts = Array(24).fill("") as string[];
-          for (const r of (p.data ?? []) as { text: string; position: number }[]) prompts[r.position] = r.text;
+          const prompts = ((p.data ?? []) as { text: string; position: number }[]).map((r) => r.text);
           setInitial({
             name: row.name,
             minutes: String(Math.ceil(row.duration_seconds / 60)),

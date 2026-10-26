@@ -4,6 +4,14 @@ import Link from "next/link";
 import { friendlyError } from "@/lib/errors";
 import { DEFAULT_PROMPTS } from "@/lib/defaultPrompts";
 import { parseDomains, MAX_DOMAINS } from "@/lib/domains";
+import {
+  MAX_PROMPTS,
+  MIN_PROMPTS,
+  appendPrompts,
+  duplicateIndexes,
+  parsePromptLines,
+  promptProblems,
+} from "@/lib/promptList";
 import type { RankingMode } from "@/lib/ranking";
 import { Button, Card, ErrorBox, Field, inputClass } from "@/components/ui";
 
@@ -113,6 +121,17 @@ export function SessionForm({
   const [errors, setErrors] = useState<string[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
+  const dupes = duplicateIndexes(prompts);
+
+  function addPasted() {
+    const r = appendPrompts(prompts, parsePromptLines(pasteText));
+    setPrompts(r.list);
+    setPasteNote(`Added ${r.added}${r.skipped ? `, skipped ${r.skipped} (blank, duplicate or over ${MAX_PROMPTS})` : ""}.`);
+    setPasteText("");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -132,10 +151,7 @@ export function SessionForm({
       problems.push(`Not a valid domain (use e.g. acme.com, no @): ${parsedDomains.invalid.join(", ")}`);
     if (parsedDomains.domains.length > MAX_DOMAINS) problems.push(`At most ${MAX_DOMAINS} allowed domains.`);
     const trimmed = prompts.map((p) => p.trim());
-    if (trimmed.some((p) => !p)) problems.push("All 24 prompts must be filled in.");
-    if (trimmed.some((p) => p.length > 120)) problems.push("Prompts can be at most 120 characters.");
-    const lower = trimmed.filter(Boolean).map((p) => p.toLowerCase());
-    if (new Set(lower).size !== lower.length) problems.push("Prompts must all be different.");
+    problems.push(...promptProblems(prompts));
     setErrors(problems);
     setServerError(null);
     if (problems.length || dur === null || win === null || max === null) return;
@@ -243,26 +259,77 @@ export function SessionForm({
 
       <Card className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-bold">24 prompts</h2>
-          <Button variant="secondary" onClick={() => setPrompts(pick24())}>
-            Shuffle from bank
-          </Button>
+          <h2 className="text-lg font-bold">Prompts ({prompts.length})</h2>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setPrompts(pick24())}>
+              Shuffle 24 from bank
+            </Button>
+            <Button variant="secondary" onClick={() => setPrompts([...DEFAULT_PROMPTS])}>
+              Use whole bank ({DEFAULT_PROMPTS.length})
+            </Button>
+          </div>
         </div>
-        <p className="text-sm text-slate-600">Each player gets these in a random order around a FREE centre square.</p>
+        <p className="text-sm text-slate-600">
+          At least {MIN_PROMPTS}. If you add more than {MIN_PROMPTS}, each player gets a random {MIN_PROMPTS}. Players see
+          theirs in a random order around a FREE centre square.
+        </p>
         <ol className="grid gap-2 sm:grid-cols-2">
           {prompts.map((p, i) => (
             <li key={i} className="flex items-center gap-2">
-              <span className="w-6 shrink-0 text-right text-sm font-semibold text-slate-400">{i + 1}</span>
+              <span className="w-7 shrink-0 text-right text-sm font-semibold text-slate-400">{i + 1}</span>
               <input
-                className={inputClass}
+                className={`${inputClass} ${dupes.has(i) ? "border-red-500 bg-red-50" : ""}`}
                 value={p}
                 maxLength={120}
                 aria-label={`Prompt ${i + 1}`}
+                aria-invalid={dupes.has(i) || undefined}
                 onChange={(e) => setPrompts((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
               />
+              <button
+                type="button"
+                aria-label={`Remove prompt ${i + 1}`}
+                disabled={prompts.length <= MIN_PROMPTS}
+                onClick={() => setPrompts((prev) => prev.filter((_, j) => j !== i))}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 text-lg font-bold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                &times;
+              </button>
             </li>
           ))}
         </ol>
+        {dupes.size ? (
+          <p className="text-sm font-semibold text-red-700">
+            Repeated prompts (highlighted): rows {[...dupes].map((i) => i + 1).join(", ")}.
+          </p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            disabled={prompts.length >= MAX_PROMPTS}
+            onClick={() => setPrompts((prev) => [...prev, ""])}
+          >
+            Add prompt
+          </Button>
+          <Button variant="secondary" onClick={() => setPasteOpen((o) => !o)}>
+            {pasteOpen ? "Close paste box" : "Paste many"}
+          </Button>
+        </div>
+        {pasteOpen ? (
+          <div className="space-y-2">
+            <textarea
+              className={`${inputClass} min-h-32`}
+              rows={6}
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              aria-label="Paste prompts, one per line"
+              placeholder={"One prompt per line\nHas a pet\nPlays chess"}
+            />
+            <Button variant="secondary" disabled={!pasteText.trim()} onClick={addPasted}>
+              Add pasted prompts
+            </Button>
+            {pasteNote ? <p className="text-sm text-slate-600">{pasteNote}</p> : null}
+          </div>
+        ) : null}
       </Card>
 
       {errors.length ? (
