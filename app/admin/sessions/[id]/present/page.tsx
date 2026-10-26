@@ -15,7 +15,7 @@ export default function PresentPage() {
   const { session, rows, offsetMs, loading } = useSessionDashboard(id);
   const [origin, setOrigin] = useState("");
   const [qrSize, setQrSize] = useState(400);
-  const remaining = useCountdown(session?.ends_at ?? null, offsetMs);
+  const remaining = useCountdown(session?.ends_at ?? null, offsetMs, session?.paused_at ?? null);
 
   useEffect(() => {
     setOrigin(getAppOrigin());
@@ -37,7 +37,8 @@ export default function PresentPage() {
       : status === "lobby"
         ? formatClock(session.duration_seconds * 1000)
         : "00:00";
-  const urgent = status === "live" && remaining !== null && remaining <= 60_000;
+  const paused = status === "live" && !!session.paused_at;
+  const urgent = status === "live" && !paused && remaining !== null && remaining <= 60_000;
   const host = origin.replace(/^https?:\/\//, "");
 
   return (
@@ -45,7 +46,7 @@ export default function PresentPage() {
       <header className="flex items-baseline justify-between gap-[3vmin]">
         <h1 className="min-w-0 truncate text-[clamp(1.5rem,4.5vmin,4rem)] font-extrabold">{session.name}</h1>
         <span className="shrink-0 text-[clamp(1rem,3vmin,2.5rem)] font-bold uppercase tracking-wide text-slate-400">
-          {status === "lobby" ? "Starting soon" : status === "live" ? "Time left" : "Final results"}
+          {status === "lobby" ? "Starting soon" : paused ? "Paused" : status === "live" ? "Time left" : "Final results"}
         </span>
       </header>
 
@@ -64,7 +65,7 @@ export default function PresentPage() {
 
         <section className="flex min-w-0 flex-col gap-[2vmin]">
           <p
-            className={`text-center font-mono text-[clamp(4rem,20vmin,18rem)] font-extrabold leading-none tabular-nums ${urgent ? "timer-warning text-red-400" : ""}`}
+            className={`text-center font-mono text-[clamp(4rem,20vmin,18rem)] font-extrabold leading-none tabular-nums ${urgent ? "timer-warning text-red-400" : ""} ${paused ? "text-amber-300" : ""}`}
           >
             {clock}
           </p>

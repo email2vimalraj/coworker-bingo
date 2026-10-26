@@ -6,17 +6,23 @@ const WARN_MS = 60_000;
 
 /**
  * Calls `onWarn` once when the countdown reaches 60s left. Remembered per end time
- * in sessionStorage so re-renders and reloads do not refire it.
+ * in sessionStorage so re-renders and reloads do not refire it. Never fires while paused
+ * (the clock is frozen, but wall time keeps moving towards the stale ends_at).
  */
-export function useMinuteWarning(endsAt: string | null, offset: number, onWarn: () => void): void {
-  const ms = useCountdown(endsAt, offset);
+export function useMinuteWarning(
+  endsAt: string | null,
+  offset: number,
+  onWarn: () => void,
+  pausedAt: string | null = null,
+): void {
+  const ms = useCountdown(endsAt, offset, pausedAt);
   const fired = useRef<string | null>(null);
   const cb = useRef(onWarn);
   useEffect(() => {
     cb.current = onWarn;
   });
   useEffect(() => {
-    if (!endsAt || ms === null || ms <= 0 || ms > WARN_MS || fired.current === endsAt) return;
+    if (!endsAt || pausedAt || ms === null || ms <= 0 || ms > WARN_MS || fired.current === endsAt) return;
     fired.current = endsAt;
     const key = `bingo-minute-warned:${endsAt}`;
     try {
@@ -26,5 +32,5 @@ export function useMinuteWarning(endsAt: string | null, offset: number, onWarn: 
       /* fall back to the ref only */
     }
     cb.current();
-  }, [endsAt, ms]);
+  }, [endsAt, ms, pausedAt]);
 }

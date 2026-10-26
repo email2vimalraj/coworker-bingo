@@ -2,7 +2,7 @@ import { lineCompletionTimes, reachTime, type ConfirmedCell } from "./lines";
 
 /**
  * Ranking rules. Must stay identical to the SQL function `_leaderboard`
- * (latest definition: supabase/migrations/0005_lines_mode.sql).
+ * (latest definition: supabase/migrations/0005_lines_mode.sql; pause-aware elapsed time from 0006).
  *
  * - correct   = confirmed squares (0-24)
  * - elapsed   = submittedAt - startedAt, else the full duration
@@ -32,6 +32,13 @@ export interface RankingConfig {
   durationSeconds: number;
   /** lines mode: lines needed to win (1-12), default 1 */
   linesToWin?: number;
+  /** pauses (ms epoch); `end: null` = still paused. Paused time is excluded from every elapsed time. */
+  pauses?: Pause[];
+}
+
+export interface Pause {
+  start: number;
+  end: number | null;
 }
 
 export interface RankingPlayer {
@@ -59,18 +66,28 @@ export interface RankedPlayer {
   reachSeconds: number | null;
 }
 
+/** Seconds of pause overlapping [from, to] (ms epoch). An open pause counts up to `to`. */
+export function pausedSeconds(pauses: Pause[], from: number, to: number): number {
+  let ms = 0;
+  for (const p of pauses) {
+    ms += Math.max(0, Math.min(p.end ?? to, to) - Math.max(p.start, from));
+  }
+  return ms / 1000;
+}
+
+/** Seconds from `startedAt` to `at` (ms epoch) minus the pauses in between (SQL `_elapsed_at`). */
+export function secondsSince(startedAt: number | null, at: number, pauses: Pause[] = []): number {
+  return startedAt === null ? 0 : (at - startedAt) / 1000 - pausedSeconds(pauses, startedAt, at);
+}
+
 export function elapsedSeconds(
   startedAt: number | null,
   submittedAt: number | null,
   durationSeconds: number,
+  pauses: Pause[] = [],
 ): number {
-  if (submittedAt !== null && startedAt !== null) return (submittedAt - startedAt) / 1000;
+  if (submittedAt !== null && startedAt !== null) return secondsSince(startedAt, submittedAt, pauses);
   return durationSeconds;
-}
-
-/** Seconds from `startedAt` to `at` (ms epoch). */
-export function secondsSince(startedAt: number | null, at: number): number {
-  return startedAt === null ? 0 : (at - startedAt) / 1000;
 }
 
 export function rankPlayers(players: RankingPlayer[], cfg: RankingConfig): RankedPlayer[] {
@@ -78,14 +95,14 @@ export function rankPlayers(players: RankingPlayer[], cfg: RankingConfig): Ranke
   const linesToWin = cfg.linesToWin ?? 1;
   const fullOnly = cfg.requireFullCard || cfg.mode === "full_card_fastest";
   const rows = players.map((p) => {
-    const elapsed = elapsedSeconds(cfg.startedAt, p.submittedAt, cfg.durationSeconds);
+    const elapsed = elapsedSeconds(cfg.startedAt, p.submittedAt, cfg.durationSeconds, cfg.pauses);
     let lines = 0;
     let reach: number | null = null;
     if (isLines) {
       const times = lineCompletionTimes(p.confirmed ?? []);
       lines = times.length;
       const at = reachTime(times, linesToWin);
-      reach = at === null ? null : secondsSince(cfg.startedAt, at);
+      reach = at === null ? null : secondsSince(cfg.startedAt, at, cfg.pauses);
     }
     const eligible =
       p.correct >= 1 && (isLines ? lines >= linesToWin : fullOnly ? p.correct === FULL_CARD : true);

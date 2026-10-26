@@ -19,6 +19,7 @@ export interface SessionRow {
   max_squares_per_coworker: number;
   allowed_email_domains: string[];
   lines_to_win: number;
+  paused_at: string | null;
   created_at: string;
 }
 
@@ -46,6 +47,8 @@ export interface PollSession {
   max_squares_per_coworker: number;
   ranking_mode: RankingMode;
   lines_to_win: number;
+  paused: boolean;
+  paused_at: string | null;
 }
 
 export interface PollMe {
@@ -115,7 +118,7 @@ export interface LeaderboardRow {
 export type SessionListItem = Pick<
   SessionRow,
   "id" | "code" | "name" | "status" | "duration_seconds" | "started_at" | "ends_at" | "ended_at" | "created_at"
-> & { player_count: number };
+> & { player_count: number; paused_at?: string | null };
 
 export interface ActivityItem {
   id: string;

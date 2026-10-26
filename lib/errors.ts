@@ -17,6 +17,10 @@ export const ERROR_MESSAGES: Record<string, string> = {
   CLAIM_NOT_PENDING: "That request has already been answered or has timed out.",
   NOT_ADMIN: "Your account is not an admin. Ask an existing admin to add you on the Admins page.",
   PROMPT_COUNT: "A session needs exactly 24 prompts.",
+  // ALREADY_PAUSED / NOT_PAUSED must come before PAUSED: codes are matched by substring in order.
+  ALREADY_PAUSED: "The game is already paused.",
+  NOT_PAUSED: "The game isn't paused.",
+  PAUSED: "The host paused the game",
   EMAIL_DOMAIN: "Please use your work email.",
   ALREADY_STARTED: "This session has already started.",
   PLAYER_NOT_FOUND: "That player no longer exists. They may have already been removed.",

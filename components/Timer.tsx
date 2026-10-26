@@ -5,13 +5,16 @@ export function Timer({
   endsAt,
   offset,
   className = "",
+  pausedAt = null,
 }: {
   endsAt: string | null;
   offset: number;
   className?: string;
+  /** frozen while set; shows "Paused" */
+  pausedAt?: string | null;
 }) {
-  const ms = useCountdown(endsAt, offset);
-  const low = ms !== null && ms > 0 && ms <= 60_000;
+  const ms = useCountdown(endsAt, offset, pausedAt);
+  const low = !pausedAt && ms !== null && ms > 0 && ms <= 60_000;
   const critical = low && ms <= 10_000;
   return (
     <span
@@ -19,6 +22,7 @@ export function Timer({
       aria-label="Time remaining"
     >
       {ms === null ? "--:--" : formatClock(ms)}
+      {pausedAt ? <span className="ml-1 text-xs font-bold uppercase text-amber-600">Paused</span> : null}
     </span>
   );
 }

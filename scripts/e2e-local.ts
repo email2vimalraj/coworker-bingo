@@ -305,6 +305,43 @@ async function main() {
     await admin.from("sessions").delete().eq("id", lc.data.id);
   }
 
+  // ---- Item 7: extend time and pause/resume ----
+  {
+    const ps = await rpc<{ id: string; code: string }>(admin, "create_session", {
+      p_name: "E2E pause", p_duration_seconds: 300, p_ranking_mode: "correct_then_time",
+      p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 1,
+      p_prompts: DEFAULT_PROMPTS.slice(0, 24),
+    });
+    await rpc(admin, "start_session", { p_session_id: ps.data.id });
+    const x = await rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: ps.data.code, p_full_name: "Pauser", p_email: "pauser@example.com" });
+    const y = await rpc<{ player_token: string; player_code: string }>(anon, "join_session", { p_code: ps.data.code, p_full_name: "Buddy", p_email: "buddy2@example.com" });
+    const ext = await rpc<{ duration_seconds: number }>(admin, "extend_session", { p_session_id: ps.data.id, p_seconds: 60 });
+    check("extend_session +60s", ext.data?.duration_seconds === 360, ext.error ?? ext.data);
+    const badExt = await rpc(admin, "extend_session", { p_session_id: ps.data.id, p_seconds: 7200 });
+    check("extend_session rejects > 3600s", !!badExt.error, badExt.error);
+    const anonPause = await rpc(anon, "pause_session", { p_session_id: ps.data.id });
+    check("anon can't pause_session", !!anonPause.error, anonPause.error);
+    const paused = await rpc(admin, "pause_session", { p_session_id: ps.data.id });
+    check("pause_session", !paused.error, paused.error);
+    const pp = await rpc<{ session: { status: string; paused: boolean; paused_at: string | null } }>(anon, "player_poll", { p_token: x.data.player_token });
+    check("poll while paused: live + paused + paused_at", pp.data?.session.status === "live" && pp.data.session.paused && !!pp.data.session.paused_at, pp.data);
+    const blocked = await rpc(anon, "create_claim", { p_token: x.data.player_token, p_cell_index: 0, p_coworker_code: y.data.player_code });
+    check("create_claim while paused -> PAUSED", blocked.error?.includes("PAUSED") ?? false, blocked.error);
+    const subPaused = await rpc(anon, "submit_board", { p_token: y.data.player_token });
+    check("submit_board allowed while paused", !subPaused.error, subPaused.error);
+    const again = await rpc(admin, "pause_session", { p_session_id: ps.data.id });
+    check("pause twice -> ALREADY_PAUSED", again.error?.includes("ALREADY_PAUSED") ?? false, again.error);
+    await sleep(1200);
+    const resumed = await rpc(admin, "resume_session", { p_session_id: ps.data.id });
+    check("resume_session", !resumed.error, resumed.error);
+    const ok2 = await rpc(anon, "create_claim", { p_token: x.data.player_token, p_cell_index: 0, p_coworker_code: y.data.player_code });
+    check("create_claim works after resume", !ok2.error, ok2.error);
+    const endedPaused = await rpc(admin, "pause_session", { p_session_id: ps.data.id });
+    const endNow = await rpc(admin, "end_session", { p_session_id: ps.data.id });
+    check("end_session while paused", !endedPaused.error && !endNow.error, endNow.error ?? endedPaused.error);
+    await admin.from("sessions").delete().eq("id", ps.data.id);
+  }
+
   const del = await admin.from("sessions").delete().eq("id", sessionId);
   const gone = await admin.from("players").select("id").eq("session_id", sessionId);
   check("delete session cascades", !del.error && (gone.data ?? []).length === 0, del.error);

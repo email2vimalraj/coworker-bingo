@@ -4,8 +4,11 @@ import { getSupabase } from "@/lib/supabase/client";
 import { friendlyError } from "@/lib/errors";
 import type { ActivityItem, LeaderboardRow, SessionRow, SessionStatus } from "@/lib/supabase/types";
 
-export function effectiveStatus(s: Pick<SessionRow, "status" | "ends_at">, nowMs = Date.now()): SessionStatus {
-  if (s.status === "live" && s.ends_at && nowMs > new Date(s.ends_at).getTime()) return "ended";
+export function effectiveStatus(
+  s: Pick<SessionRow, "status" | "ends_at"> & { paused_at?: string | null },
+  nowMs = Date.now(),
+): SessionStatus {
+  if (s.status === "live" && !s.paused_at && s.ends_at && nowMs > new Date(s.ends_at).getTime()) return "ended";
   return s.status;
 }
 

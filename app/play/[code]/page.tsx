@@ -23,7 +23,8 @@ export default function PlayPage() {
   const { sessionCode, token, data, offset, refresh } = usePlayer();
   const router = useRouter();
   const { session, me, board, result } = data;
-  const remaining = useCountdown(session.ends_at, offset);
+  const paused = session.paused;
+  const remaining = useCountdown(session.ends_at, offset, session.paused_at);
   const [selected, setSelected] = useState<number | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -31,11 +32,16 @@ export default function PlayPage() {
   const [toast, setToast] = useState<string | null>(null);
   const seen = useRef<Set<string> | null>(null);
 
-  useMinuteWarning(session.status === "live" ? session.ends_at : null, offset, () => {
-    notify("warning");
-    setToast("1 minute left!");
-    window.setTimeout(() => setToast(null), 4000);
-  });
+  useMinuteWarning(
+    session.status === "live" ? session.ends_at : null,
+    offset,
+    () => {
+      notify("warning");
+      setToast("1 minute left!");
+      window.setTimeout(() => setToast(null), 4000);
+    },
+    session.paused ? session.paused_at : null,
+  );
 
   const won = session.status === "ended" && !!result?.is_winner;
   const confettied = useRef(false);
@@ -51,8 +57,8 @@ export default function PlayPage() {
     ? cellsInCompletedLines(board.filter((c) => c.status === "confirmed").map((c) => c.cell_index))
     : undefined;
   const submitted = !!me.submitted_at;
-  const timeUp = session.status === "live" && remaining !== null && remaining <= 0;
-  const locked = submitted || timeUp || session.status !== "live";
+  const timeUp = session.status === "live" && !paused && remaining !== null && remaining <= 0;
+  const locked = submitted || timeUp || paused || session.status !== "live";
 
   // Toast when a request is newly rejected / timed out.
   useEffect(() => {
@@ -187,7 +193,7 @@ export default function PlayPage() {
       <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur">
         <div>
           <p className="text-[11px] font-semibold uppercase text-slate-500">Time left</p>
-          <Timer endsAt={session.ends_at} offset={offset} className="text-2xl" />
+          <Timer endsAt={session.ends_at} offset={offset} pausedAt={session.paused_at} className="text-2xl" />
         </div>
         <div className="text-center">
           <p className="text-[11px] font-semibold uppercase text-slate-500">{isLines ? "Lines" : "Score"}</p>
@@ -205,6 +211,11 @@ export default function PlayPage() {
       </header>
       {toastEl}
       <main className="space-y-3 p-2 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+        {paused ? (
+          <div role="status" className="rounded-xl bg-amber-200 p-3 text-center text-sm font-bold text-amber-950">
+            Game paused by host. The timer is stopped and your board is locked until the game resumes.
+          </div>
+        ) : null}
         {submitted ? (
           <div className="rounded-xl bg-indigo-100 p-3 text-center text-sm font-semibold text-indigo-900">
             Board submitted! Waiting for the game to end. Keep confirming coworkers&apos; requests.
@@ -220,7 +231,7 @@ export default function PlayPage() {
           highlight={lineCells}
           onSelect={(c) => !c.is_free && setSelected(c.cell_index)}
         />
-        {!locked ? (
+        {!submitted && !timeUp ? (
           <div className="space-y-2 px-1">
             {submitError ? <ErrorBox>{submitError}</ErrorBox> : null}
             {confirming ? (

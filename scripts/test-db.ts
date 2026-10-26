@@ -148,7 +148,7 @@ async function main() {
   assert.deepEqual(Object.keys(live).sort(), ["board", "incoming", "me", "result", "server_now", "session"]);
   assert.deepEqual(
     Object.keys(live.session).sort(),
-    ["code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "ranking_mode", "started_at", "status", "winners_count"],
+    ["code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "paused", "paused_at", "ranking_mode", "started_at", "status", "winners_count"],
   );
   assert.deepEqual(Object.keys(live.me).sort(), ["correct", "full_name", "id", "lines", "player_code", "submitted_at"]);
   assert.equal(live.board.length, 25);
@@ -336,7 +336,7 @@ async function main() {
     const anonTbl = await q("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and (has_table_privilege('anon', c.oid, 'select,insert,update,delete') or exists (select 1 from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and has_column_privilege('anon', c.oid, a.attnum, 'select')))");
     assert.deepEqual(anonTbl, []);
     // admin RPCs and internals are not executable by anon / public
-    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[],int)", "_bingo_lines()", "_elapsed_at(uuid,timestamptz)", "_normalize_domains(text[])", "update_session(uuid,text,int,ranking_mode,boolean,int,int,text[],text[],int)", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
+    const adminFns = ["create_session(text,int,ranking_mode,boolean,int,int,text[],text[],int)", "_bingo_lines()", "_elapsed_at(uuid,timestamptz)", "pause_session(uuid)", "resume_session(uuid)", "extend_session(uuid,int)", "_paused_seconds(uuid,timestamptz,timestamptz)", "_claim_expired(uuid,timestamptz)", "admin_sessions()", "_normalize_domains(text[])", "update_session(uuid,text,int,ranking_mode,boolean,int,int,text[],text[],int)", "start_session(uuid)", "end_session(uuid)", "session_leaderboard(uuid)", "session_activity(uuid,int)", "server_now()", "_leaderboard(uuid)", "is_admin()"];
     for (const f of adminFns) {
       const r = await q("select has_function_privilege('anon', $1::regprocedure, 'execute') as a, has_function_privilege('public', $1::regprocedure, 'execute') as p", [f]);
       assert.deepEqual(r[0], { a: false, p: false }, f);
@@ -746,6 +746,193 @@ async function main() {
     assert.equal(Math.round(Number(lend.result!.reach_seconds)), 50);
     assert.equal(lend.result!.rank, 1);
     ok("player_poll: me.lines, session.ranking_mode/lines_to_win, result.lines/reach_seconds");
+  }
+
+  // ---- Item 7: extend time and pause/resume ----
+  {
+    const admin = <T,>(fn: () => Promise<T>) => as("authenticated", ADMIN, fn);
+    const anon = <T,>(fn: () => Promise<T>) => as("anon", null, fn);
+    const ps = await admin(() => rpc("create_session", ["Pausable", 600, "correct_then_time", false, 3, 24, prompts]));
+    const psid = ps.id as string;
+    const pj = async (n: string) => anon(() => rpc("join_session", [ps.code, n, `${n.toLowerCase()}@pause.io`]) as unknown as Promise<Joined>);
+    const [X, Y, Z] = [await pj("Xp"), await pj("Yp"), await pj("Zp")];
+    const ppoll = (j: Joined) => anon(() => rpc("player_poll", [j.player_token]) as unknown as Promise<Poll>);
+    const pclaim = (j: Joined, cell: number, to: Joined) => anon(() => rpc("create_claim", [j.player_token, cell, to.player_code]));
+
+    // lobby: pause/extend not possible
+    await admin(async () => {
+      await expectErr("NOT_LIVE", rpc("pause_session", [psid]));
+      await expectErr("NOT_LIVE", rpc("extend_session", [psid, 60]));
+      await expectErr("NOT_PAUSED", rpc("resume_session", [psid]));
+      await rpc("start_session", [psid]);
+    });
+    const p0 = await ppoll(X);
+    assert.equal(p0.session.paused, false);
+    assert.equal(p0.session.paused_at, null);
+
+    // permissions
+    await anon(async () => {
+      await expectErr("permission denied", rpc("pause_session", [psid]));
+      await expectErr("permission denied", rpc("resume_session", [psid]));
+      await expectErr("permission denied", rpc("extend_session", [psid, 60]));
+      await expectErr("permission denied", q("select * from session_pauses"));
+    });
+    await as("authenticated", OTHER_USER, async () => {
+      await expectErr("NOT_ADMIN", rpc("pause_session", [psid]));
+      await expectErr("NOT_ADMIN", rpc("extend_session", [psid, 60]));
+    });
+
+    // extend
+    const endsBefore = new Date(String((await q("select ends_at from sessions where id=$1", [psid]))[0].ends_at)).getTime();
+    await admin(async () => {
+      await expectErr("INVALID_INPUT", rpc("extend_session", [psid, 0]));
+      await expectErr("INVALID_INPUT", rpc("extend_session", [psid, 3601]));
+      await rpc("extend_session", [psid, 120]);
+    });
+    const ext = (await q("select duration_seconds, ends_at from sessions where id=$1", [psid]))[0];
+    assert.equal(ext.duration_seconds, 720);
+    assert.equal(new Date(String(ext.ends_at)).getTime() - endsBefore, 120_000);
+    ok("extend_session: bounds, adds to ends_at and duration_seconds, admin only");
+
+    // a pending claim, then pause
+    const pend = await pclaim(X, 0, Y);
+    await admin(async () => {
+      await rpc("pause_session", [psid]);
+      await expectErr("ALREADY_PAUSED", rpc("pause_session", [psid]));
+    });
+    const pp = await ppoll(X);
+    assert.equal(pp.session.status, "live");
+    assert.equal(pp.session.paused, true);
+    assert.ok(pp.session.paused_at);
+    assert.equal(((await ppoll(Y)).incoming.length), 1);
+    await expectErr("PAUSED", pclaim(X, 1, Z));
+    await expectErr("PAUSED", anon(() => rpc("respond_claim", [Y.player_token, pend.claim_id, true])));
+    await expectErr("PAUSED", anon(() => rpc("cancel_claim", [X.player_token, pend.claim_id])));
+    // submit is still allowed while paused
+    await anon(() => rpc("submit_board", [Z.player_token]));
+    assert.ok((await ppoll(Z)).me.submitted_at);
+    // admin list exposes paused_at
+    const lst = await admin(() => q("select id, paused_at from admin_sessions()"));
+    assert.ok(lst.find((r) => r.id === psid)?.paused_at);
+    ok("pause_session: poll paused/paused_at, claims blocked with PAUSED, submit allowed");
+
+    // a paused session is never ended by time, and can still be extended
+    await q("update sessions set ends_at = now() - interval '50 seconds' where id=$1", [psid]);
+    assert.equal((await ppoll(X)).session.status, "live");
+    await expectErr("PAUSED", pclaim(X, 1, Z));
+    await admin(() => rpc("extend_session", [psid, 10])); // extending a paused session is allowed
+    // resume pushes ends_at forward by the pause length
+    await q("update session_pauses set started_at = now() - interval '100 seconds' where session_id=$1 and ended_at is null", [psid]);
+    await q("update sessions set paused_at = now() - interval '100 seconds', ends_at = now() + interval '30 seconds' where id=$1", [psid]);
+    await admin(() => rpc("resume_session", [psid]));
+    const after = (await q("select paused_at, extract(epoch from (ends_at - now())) as left from sessions where id=$1", [psid]))[0];
+    assert.equal(after.paused_at, null);
+    assert.ok(Math.abs(Number(after.left) - 130) < 2, `ends_at pushed by pause length (${after.left})`);
+    assert.equal((await q("select count(*)::int as n from session_pauses where session_id=$1 and ended_at is null", [psid]))[0].n, 0);
+    await admin(async () => {
+      await expectErr("NOT_PAUSED", rpc("resume_session", [psid]));
+    });
+    assert.equal((await ppoll(X)).session.paused, false);
+    // claims work again; the claim made before the pause is still pending
+    await anon(() => rpc("respond_claim", [Y.player_token, pend.claim_id, true]));
+    await pclaim(X, 1, Z);
+    ok("resume_session: ends_at pushed forward, paused flag cleared, claims allowed again");
+
+    // pending claims do not age while paused
+    await q("update sessions set started_at = now() - interval '600 seconds', ends_at = now() + interval '300 seconds' where id=$1", [psid]);
+    const old1 = await pclaim(X, 2, Z);
+    const old2 = await pclaim(Y, 3, Z);
+    await q("update claims set created_at = now() - interval '270 seconds' where id in ($1, $2)", [old1.claim_id, old2.claim_id]);
+    // both are 4.5 minutes old, but most of that time was paused, so neither has expired
+    await q("insert into session_pauses(session_id, started_at, ended_at) values ($1, now() - interval '240 seconds', now() - interval '60 seconds')", [psid]);
+    assert.equal((await anon(() => rpc("respond_claim", [Z.player_token, old1.claim_id, true]))).status, "confirmed");
+    assert.equal((await anon(() => rpc("respond_claim", [Z.player_token, old2.claim_id, true]))).status, "confirmed");
+    const ctl = await admin(() => rpc("create_session", ["Control", 600, "correct_then_time", false, 3, 24, prompts]));
+    await admin(() => rpc("start_session", [ctl.id]));
+    const cj = async (n: string) => anon(() => rpc("join_session", [ctl.code, n, `${n.toLowerCase()}@ctl.io`]) as unknown as Promise<Joined>);
+    const [CA, CB] = [await cj("Ca"), await cj("Cb")];
+    const cc = await pclaim(CA, 0, CB);
+    await q("update claims set created_at = now() - interval '270 seconds' where id=$1", [cc.claim_id]);
+    await expectErr("CLAIM_NOT_PENDING", anon(() => rpc("respond_claim", [CB.player_token, cc.claim_id, true])));
+    ok("pending claims do not age during pauses (control session without a pause expires)");
+
+    // elapsed excludes pauses: leaderboard matches lib/ranking.ts with pauses (two modes)
+    const es = await admin(() => rpc("create_session", ["Elapsed", 600, "correct_then_time", false, 3, 24, prompts]));
+    await q("update sessions set status='live', started_at = now() - interval '400 seconds', ends_at = now() + interval '200 seconds' where id=$1", [es.id]);
+    const ej: Joined[] = [];
+    for (let i = 0; i < 4; i++) ej.push(await anon(() => rpc("join_session", [es.code, `E${i}`, `e${i}@elapsed.io`]) as unknown as Promise<Joined>));
+    const eids = ej.map((x) => x.player_id);
+    for (let i = 0; i < eids.length; i++) await q("update players set joined_at = now() - make_interval(secs => $1) where id=$2", [100 - i, eids[i]]);
+    // pause from +100s to +200s, plus a still-open pause from +350s
+    await q("insert into session_pauses(session_id, started_at, ended_at) values ($1, (select started_at from sessions where id=$1) + interval '100 seconds', (select started_at from sessions where id=$1) + interval '200 seconds')", [es.id]);
+    await q("insert into session_pauses(session_id, started_at) values ($1, (select started_at from sessions where id=$1) + interval '350 seconds')", [es.id]);
+    await q("update sessions set paused_at = started_at + interval '350 seconds' where id=$1", [es.id]);
+    const espec: [number, number[], number, number | null][] = [
+      [0, [0, 1, 2, 3, 4], 260, 250], // row 0 at +260 (after first pause), submitted +250
+      [1, [0, 1, 2, 3, 4], 150, 150], // inside the pause
+      [2, [0, 1, 2, 3, 4], 380, null], // during the open pause window
+      [3, [5, 6, 7, 8], 120, 130],
+    ];
+    for (const [pi, cells, sec, sub] of espec) {
+      for (const cell of cells) {
+        await q(
+          "insert into claims(session_id, player_id, coworker_id, cell_index, status, created_at, resolved_at) values ($1,$2,$3,$4,'confirmed', (select started_at from sessions where id=$1), (select started_at from sessions where id=$1) + make_interval(secs => $5))",
+          [es.id, eids[pi], eids[(pi + 1) % 4], cell, sec],
+        );
+      }
+      if (sub !== null) await q("update players set submitted_at = (select started_at from sessions where id=$1) + make_interval(secs => $2) where id=$3", [es.id, sub, eids[pi]]);
+    }
+    for (const mode of ["correct_then_time", "lines"] as const) {
+      await q("update sessions set ranking_mode=$1, lines_to_win=1 where id=$2", [mode, es.id]);
+      const lb = await admin(() => q("select * from session_leaderboard($1)", [es.id]));
+      const st = Number((await q("select extract(epoch from started_at)*1000 as st from sessions where id=$1", [es.id]))[0].st);
+      const pauses = (await q("select extract(epoch from started_at)*1000 as s, extract(epoch from ended_at)*1000 as e from session_pauses where session_id=$1", [es.id])).map((r) => ({ start: Number(r.s), end: r.e === null ? null : Number(r.e) }));
+      const pl = await q("select id, extract(epoch from joined_at)*1000 as j, extract(epoch from submitted_at)*1000 as sub from players where session_id=$1", [es.id]);
+      const cl = await q("select player_id, cell_index, extract(epoch from resolved_at)*1000 as r from claims where session_id=$1 and status='confirmed'", [es.id]);
+      const expected = rankPlayers(
+        pl.map((p) => {
+          const mine = cl.filter((x) => x.player_id === p.id).map((x) => ({ cell: x.cell_index as number, resolvedAt: Number(x.r) }));
+          return { id: p.id as string, correct: mine.length, joinedAt: Number(p.j), submittedAt: p.sub === null ? null : Number(p.sub), confirmed: mine };
+        }),
+        { mode, requireFullCard: false, winnersCount: 3, startedAt: st, durationSeconds: 600, linesToWin: 1, pauses },
+      );
+      lb.forEach((row, i) => {
+        const e = expected[i];
+        const label = `pause parity ${mode} row ${i}`;
+        assert.equal(row.player_id, e.id, `${label} id`);
+        assert.ok(Math.abs(Number(row.elapsed_seconds) - e.elapsedSeconds) < 0.01, `${label} elapsed ${row.elapsed_seconds} vs ${e.elapsedSeconds}`);
+        assert.equal(row.rank, e.rank, `${label} rank`);
+        assert.equal(row.eligible, e.eligible, `${label} eligible`);
+        if (e.reachSeconds === null) assert.equal(row.reach_seconds, null, `${label} reach null`);
+        else assert.ok(Math.abs(Number(row.reach_seconds) - e.reachSeconds) < 0.01, `${label} reach`);
+      });
+      if (mode === "correct_then_time") {
+        // E0 submitted at +250 with 100s paused -> 150; E1 at +150 with 50s paused -> 100
+        const byId = new Map(lb.map((r) => [r.player_id, r]));
+        assert.ok(Math.abs(Number(byId.get(eids[0])!.elapsed_seconds) - 150) < 0.01);
+        assert.ok(Math.abs(Number(byId.get(eids[1])!.elapsed_seconds) - 100) < 0.01);
+      } else {
+        // E2 completes row 0 at +380: 100s + 30s (open pause since +350) paused -> 250
+        const r2 = lb.find((r) => r.player_id === eids[2])!;
+        assert.ok(Math.abs(Number(r2.reach_seconds) - 250) < 0.01, `reach ${r2.reach_seconds}`);
+      }
+      ok(`elapsed and reach time exclude pauses; leaderboard matches lib/ranking.ts (${mode})`);
+    }
+
+    // end_session while paused closes the pause
+    await admin(async () => {
+      await rpc("end_session", [es.id]);
+    });
+    const ended = (await q("select status::text as st, paused_at, (select count(*)::int from session_pauses where session_id=$1 and ended_at is null) as open from sessions where id=$1", [es.id]))[0];
+    assert.deepEqual(ended, { st: "ended", paused_at: null, open: 0 });
+    assert.equal((await ppoll(ej[0])).session.status, "ended");
+    assert.equal((await ppoll(ej[0])).session.paused, false);
+    await admin(async () => {
+      await expectErr("SESSION_ENDED", rpc("pause_session", [es.id]));
+      await expectErr("SESSION_ENDED", rpc("extend_session", [es.id, 60]));
+      await expectErr("SESSION_ENDED", rpc("resume_session", [es.id]));
+    });
+    ok("end_session while paused closes the pause; pause/extend/resume rejected after the end");
   }
 
   console.log(`\n${passed} checks passed`);

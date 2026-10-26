@@ -38,7 +38,7 @@ export default function SessionDashboard() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [managed, setManaged] = useState<LeaderboardRow | null>(null);
-  const remaining = useCountdown(session?.ends_at ?? null, offsetMs);
+  const remaining = useCountdown(session?.ends_at ?? null, offsetMs, session?.paused_at ?? null);
 
   useEffect(() => setOrigin(getAppOrigin()), []);
 
@@ -57,12 +57,16 @@ export default function SessionDashboard() {
 
   const status = effectiveStatus(session, Date.now() + offsetMs);
   const url = origin ? joinUrl(origin, session.code) : "";
+  const paused = status === "live" && !!session.paused_at;
 
-  async function action(name: "start_session" | "end_session") {
+  async function action(
+    name: "start_session" | "end_session" | "pause_session" | "resume_session" | "extend_session",
+    extra: Record<string, unknown> = {},
+  ) {
     setBusy(true);
     setActionError(null);
     try {
-      await rpc(name, { p_session_id: id });
+      await rpc(name, { p_session_id: id, ...extra });
       setConfirmEnd(false);
     } catch (e) {
       setActionError(friendlyError(e));
@@ -102,10 +106,15 @@ export default function SessionDashboard() {
             >
               {status === "lobby" ? "Not started" : status}
             </span>
+            {paused ? (
+              <span className="rounded-full bg-amber-200 px-3 py-1 text-sm font-bold uppercase text-amber-900">
+                Paused
+              </span>
+            ) : null}
             <span
-              className={`font-mono text-5xl font-extrabold tabular-nums ${status === "live" && remaining !== null && remaining <= 60_000 ? "timer-warning text-red-600" : ""}`}
+              className={`font-mono text-5xl font-extrabold tabular-nums ${status === "live" && !paused && remaining !== null && remaining <= 60_000 ? "timer-warning text-red-600" : ""} ${paused ? "text-amber-600" : ""}`}
             >
-              {status === "live" && remaining !== null
+              {(status === "live" || paused) && remaining !== null
                 ? formatClock(remaining)
                 : status === "lobby"
                   ? formatClock(session.duration_seconds * 1000)
@@ -117,6 +126,29 @@ export default function SessionDashboard() {
               <Button disabled={busy} onClick={() => action("start_session")}>
                 Start game
               </Button>
+            ) : null}
+            {status === "live" ? (
+              <>
+                {paused ? (
+                  <Button disabled={busy} onClick={() => action("resume_session")}>
+                    Resume
+                  </Button>
+                ) : (
+                  <Button variant="secondary" disabled={busy} onClick={() => action("pause_session")}>
+                    Pause
+                  </Button>
+                )}
+                {[1, 2, 5].map((m) => (
+                  <Button
+                    key={m}
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => action("extend_session", { p_seconds: m * 60 })}
+                  >
+                    +{m} min
+                  </Button>
+                ))}
+              </>
             ) : null}
             {status === "live" && !confirmEnd ? (
               <Button variant="secondary" disabled={busy} onClick={() => setConfirmEnd(true)}>

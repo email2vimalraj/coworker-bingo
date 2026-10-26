@@ -4,8 +4,14 @@ import { useEffect, useState } from "react";
 /**
  * Milliseconds remaining until `endsAt` (ISO string), corrected by `offsetMs`
  * (server time minus local time). Ticks every 250ms. Returns null without an end time.
+ * With `pausedAt` the value is frozen (the server leaves ends_at untouched while paused).
  */
-export function useCountdown(endsAt: string | null | undefined, offsetMs: number): number | null {
+export function useCountdown(
+  endsAt: string | null | undefined,
+  offsetMs: number,
+  /** while paused the clock is frozen at endsAt - pausedAt */
+  pausedAt?: string | null,
+): number | null {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!endsAt) return;
@@ -14,6 +20,7 @@ export function useCountdown(endsAt: string | null | undefined, offsetMs: number
     return () => window.clearInterval(id);
   }, [endsAt]);
   if (!endsAt) return null;
+  if (pausedAt) return Math.max(0, new Date(endsAt).getTime() - new Date(pausedAt).getTime());
   return Math.max(0, new Date(endsAt).getTime() - (now + offsetMs));
 }
 
