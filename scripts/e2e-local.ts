@@ -224,6 +224,19 @@ async function main() {
     const again = await rpc<{ added: boolean }>(admin, "admin_add", { p_email: ADMIN_EMAIL.toUpperCase() });
     check("admin_add existing admin is a no-op", !again.error && again.data.added === false, again);
   }
+  // ---- Item 14: Post-event stats ----
+  type StatsJson = {
+    participation: { joined: number; active: number; submitted: number };
+    squares: { confirmed: number; distribution: unknown[] };
+    prompts: { found_count: number }[];
+    people: { total_unique_connections: number; top_connected: unknown[] };
+  };
+  const stats = await rpc<StatsJson>(admin, "session_stats", { p_session_id: sessionId });
+  check("session_stats: participation and squares", stats.data?.participation.joined === 3 && stats.data.squares.confirmed === 3 && stats.data.squares.distribution.length === 7, stats.error ?? stats.data);
+  check("session_stats: 24 prompts, found counts sum to confirmed", stats.data?.prompts.length === 24 && stats.data.prompts.reduce((n, p) => n + Number(p.found_count), 0) === 3, stats.error ?? stats.data?.prompts);
+  check("session_stats: connections present", (stats.data?.people.total_unique_connections ?? 0) >= 1 && (stats.data?.people.top_connected.length ?? 0) >= 1, stats.error ?? stats.data?.people);
+  const anonStats = await rpc(anon, "session_stats", { p_session_id: sessionId });
+  check("anon can't call session_stats", !!anonStats.error, anonStats.error);
 
   const del = await admin.from("sessions").delete().eq("id", sessionId);
   const gone = await admin.from("players").select("id").eq("session_id", sessionId);

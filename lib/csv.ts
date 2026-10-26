@@ -1,7 +1,7 @@
-import type { LeaderboardRow } from "@/lib/supabase/types";
-import { formatDuration } from "@/lib/useCountdown";
+import type { LeaderboardRow } from "./supabase/types";
+import { formatDuration } from "./useCountdown";
 
-function cell(v: string | number | boolean | null): string {
+export function cell(v: string | number | boolean | null): string {
   let s = v === null ? "" : String(v);
   // Guard against spreadsheet formula injection from player-entered text.
   if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
@@ -36,6 +36,11 @@ export function leaderboardCsv(rows: LeaderboardRow[]): string {
       .join(","),
   );
   return [header.map(cell).join(","), ...lines].join("\r\n");
+}
+
+/** Generic table to CSV (same escaping as the leaderboard export). */
+export function tableCsv(header: string[], rows: (string | number | boolean | null)[][]): string {
+  return [header.map(cell).join(","), ...rows.map((r) => r.map(cell).join(","))].join("\r\n");
 }
 
 export function downloadCsv(filename: string, csv: string): void {

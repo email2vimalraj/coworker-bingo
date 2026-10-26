@@ -511,6 +511,58 @@ async function main() {
     ok("admin_list / admin_add / admin_remove incl. USER_NOT_FOUND, CANNOT_REMOVE_SELF, no-op re-add");
   }
 
+  // ---- Item 14: Post-event stats ----
+  {
+    const st = await as("authenticated", ADMIN, async () => {
+      const r = await rpc("create_session", ["Stats game", 600, "correct_then_time", false, 3, 5, prompts]);
+      await rpc("start_session", [r.id]);
+      return r;
+    });
+    const stId = st.id as string;
+    const [SP, SQ, SR, SS] = [
+      await join("Pia", "pia@example.com", st.code as string),
+      await join("Quin", "quin@example.com", st.code as string),
+      await join("Rae", "rae@example.com", st.code as string),
+      await join("Sid", "sid@example.com", st.code as string),
+    ];
+    const ins = (a: Joined, b: Joined, cell: number, status: string) =>
+      q("insert into claims(session_id, player_id, coworker_id, cell_index, status, resolved_at) values ($1,$2,$3,$4,$5,now())", [stId, a.player_id, b.player_id, cell, status]);
+    await ins(SP, SQ, 0, "confirmed");
+    await ins(SQ, SP, 0, "confirmed"); // same pair, other direction
+    await ins(SP, SR, 1, "confirmed");
+    await ins(SR, SQ, 0, "rejected");
+    await ins(SS, SP, 0, "expired");
+    await q("update players set submitted_at = (select started_at from sessions where id=$1) + interval '100 seconds' where id=$2", [stId, SP.player_id]);
+    const stats = (await as("authenticated", ADMIN, () => rpc("session_stats", [stId]))) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    assert.deepEqual(stats.participation, { joined: 4, active: 2, submitted: 1, full_cards: 0, participation_rate: 0.5 });
+    assert.equal(stats.squares.confirmed, 3);
+    assert.equal(stats.squares.rejected, 1);
+    assert.equal(stats.squares.expired, 1);
+    assert.equal(Number(stats.squares.avg_confirmed_per_player), 0.75);
+    assert.equal(stats.squares.distribution.length, 7);
+    assert.deepEqual(stats.squares.distribution.map((d: Row) => d.players), [2, 2, 0, 0, 0, 0, 0]);
+    assert.equal(Number(stats.timing.avg_elapsed_seconds), 100);
+    assert.equal(stats.timing.fastest_full_card, null);
+    assert.equal(stats.prompts.length, 24);
+    assert.equal(stats.prompts.reduce((n: number, p: Row) => n + Number(p.found_count), 0), 3);
+    assert.equal(stats.prompts.reduce((n: number, p: Row) => n + Number(p.rejected_count), 0), 1);
+    assert.ok(stats.prompts.every((p: Row, i: number, a: Row[]) => i === 0 || Number(a[i - 1].found_count) >= Number(p.found_count)));
+    assert.equal(stats.people.total_unique_connections, 2);
+    assert.deepEqual(stats.people.top_connected[0], { name: "Pia", connections: 2, times_confirmed_for_others: 1 });
+    assert.equal(stats.people.top_connected.length, 3);
+    // empty session
+    const empty = await as("authenticated", ADMIN, async () => {
+      const r = await rpc("create_session", ["Empty", 600, "correct_then_time", false, 3, 5, prompts]);
+      return (await rpc("session_stats", [r.id])) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    });
+    assert.equal(empty.participation.joined, 0);
+    assert.equal(empty.participation.participation_rate, 0);
+    assert.deepEqual(empty.people.top_connected, []);
+    await as("anon", null, () => expectErr("permission denied", rpc("session_stats", [stId])));
+    await as("authenticated", OTHER_USER, () => expectErr("NOT_ADMIN", rpc("session_stats", [stId])));
+    ok("session_stats: counts, distribution, connections, empty session, admin-only");
+  }
+
   console.log(`\n${passed} checks passed`);
 }
 

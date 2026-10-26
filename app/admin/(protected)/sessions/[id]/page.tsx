@@ -144,6 +144,12 @@ export default function SessionDashboard() {
             >
               Present
             </Link>
+            <Link
+              href={`/admin/sessions/${id}/stats`}
+              className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white px-4 font-semibold"
+            >
+              Stats
+            </Link>
             <Button variant="ghost" onClick={() => setConfirmDelete(true)}>
               Delete
             </Button>
