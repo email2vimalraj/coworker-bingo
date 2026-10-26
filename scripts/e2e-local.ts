@@ -231,9 +231,13 @@ async function main() {
     prompts: { found_count: number }[];
     people: { total_unique_connections: number; top_connected: unknown[] };
   };
+  // Compare with the leaderboard (earlier blocks may have removed players or undone squares).
+  const lbNow = await rpc<{ correct: number }[]>(admin, "session_leaderboard", { p_session_id: sessionId });
+  const expectJoined = lbNow.data?.length ?? -1;
+  const expectConfirmed = (lbNow.data ?? []).reduce((n, r) => n + Number(r.correct), 0);
   const stats = await rpc<StatsJson>(admin, "session_stats", { p_session_id: sessionId });
-  check("session_stats: participation and squares", stats.data?.participation.joined === 3 && stats.data.squares.confirmed === 3 && stats.data.squares.distribution.length === 7, stats.error ?? stats.data);
-  check("session_stats: 24 prompts, found counts sum to confirmed", stats.data?.prompts.length === 24 && stats.data.prompts.reduce((n, p) => n + Number(p.found_count), 0) === 3, stats.error ?? stats.data?.prompts);
+  check("session_stats: participation and squares match leaderboard", stats.data?.participation.joined === expectJoined && stats.data.squares.confirmed === expectConfirmed && stats.data.squares.distribution.length === 7, stats.error ?? { joined: stats.data?.participation.joined, confirmed: stats.data?.squares.confirmed, expectJoined, expectConfirmed });
+  check("session_stats: 24 prompts, found counts sum to confirmed", stats.data?.prompts.length === 24 && stats.data.prompts.reduce((n, p) => n + Number(p.found_count), 0) === expectConfirmed, stats.error ?? "prompt counts off");
   check("session_stats: connections present", (stats.data?.people.total_unique_connections ?? 0) >= 1 && (stats.data?.people.top_connected.length ?? 0) >= 1, stats.error ?? stats.data?.people);
   const anonStats = await rpc(anon, "session_stats", { p_session_id: sessionId });
   check("anon can't call session_stats", !!anonStats.error, anonStats.error);
