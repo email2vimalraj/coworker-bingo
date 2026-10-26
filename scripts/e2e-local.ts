@@ -211,6 +211,20 @@ async function main() {
   check("realtime: players events delivered", events.players > 0);
   await admin.removeChannel(channel);
 
+  // ---- Item 5: manage admins ----
+  {
+    const list = await rpc<{ user_id: string; email: string; is_me: boolean }[]>(admin, "admin_list");
+    check("admin_list includes me", !list.error && list.data.some((r) => r.is_me && r.email === ADMIN_EMAIL), list);
+    const anonList2 = await rpc(anon, "admin_list");
+    check("anon cannot call admin_list", !!anonList2.error, anonList2);
+    const nf = await rpc(admin, "admin_add", { p_email: "nobody-here@example.invalid" });
+    check("admin_add unknown email -> USER_NOT_FOUND", nf.error?.includes("USER_NOT_FOUND") ?? false, nf.error);
+    const self = await rpc(admin, "admin_remove", { p_user_id: list.data.find((r) => r.is_me)?.user_id });
+    check("admin_remove self -> CANNOT_REMOVE_SELF", self.error?.includes("CANNOT_REMOVE_SELF") ?? false, self.error);
+    const again = await rpc<{ added: boolean }>(admin, "admin_add", { p_email: ADMIN_EMAIL.toUpperCase() });
+    check("admin_add existing admin is a no-op", !again.error && again.data.added === false, again);
+  }
+
   const del = await admin.from("sessions").delete().eq("id", sessionId);
   const gone = await admin.from("players").select("id").eq("session_id", sessionId);
   check("delete session cascades", !del.error && (gone.data ?? []).length === 0, del.error);

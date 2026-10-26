@@ -15,10 +15,14 @@ export const ERROR_MESSAGES: Record<string, string> = {
   INVALID_TOKEN: "Your player session wasn't recognised. Please join again.",
   CLAIM_NOT_FOUND: "That request no longer exists.",
   CLAIM_NOT_PENDING: "That request has already been answered or has timed out.",
-  NOT_ADMIN: "Your account is not an admin. Ask an owner to add you to the admins table.",
+  NOT_ADMIN: "Your account is not an admin. Ask an existing admin to add you on the Admins page.",
   PROMPT_COUNT: "A session needs exactly 24 prompts.",
   ALREADY_STARTED: "This session has already started.",
   PLAYER_NOT_FOUND: "That player no longer exists. They may have already been removed.",
+  USER_NOT_FOUND:
+    "No account with that email yet. They must first create an account at /admin/login.",
+  CANNOT_REMOVE_SELF: "You can't remove yourself as an admin.",
+  LAST_ADMIN: "You can't remove the last admin.",
   CODE_GENERATION_FAILED: "Couldn't generate a unique code. Please try again.",
 };
 

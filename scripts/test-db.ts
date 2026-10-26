@@ -15,7 +15,7 @@ const db = new PGlite({ extensions: { citext } });
 
 const STUB = `
 create schema auth;
-create table auth.users (id uuid primary key);
+create table auth.users (id uuid primary key, email text);
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 create role anon nologin;
@@ -472,6 +472,43 @@ async function main() {
     const re = await join("Zed", "zed4@example.com", s4.code as string);
     assert.ok(re.player_token);
     ok("admin_remove_player cascades, reports lost squares, invalidates the token, allows rejoin");
+  }
+
+  // ---- Item 5: Manage admins ----
+  {
+    const NEWBIE = "00000000-0000-0000-0000-0000000000c3";
+    await q("insert into auth.users(id, email) values ($1, 'New.Person@Example.com')", [NEWBIE]);
+    await q("update auth.users set email='admin@example.com' where id=$1", [ADMIN]);
+    await as("authenticated", OTHER_USER, async () => {
+      await expectErr("NOT_ADMIN", q("select * from admin_list()"));
+      await expectErr("NOT_ADMIN", rpc("admin_add", ["new.person@example.com"]));
+      await expectErr("NOT_ADMIN", rpc("admin_remove", [ADMIN]));
+    });
+    await expectErr("permission denied", as("anon", null, () => q("select * from admin_list()")));
+    await as("authenticated", ADMIN, async () => {
+      const l = await q("select * from admin_list()");
+      assert.equal(l.length, 1);
+      assert.deepEqual([l[0].user_id, l[0].email, l[0].is_me], [ADMIN, "admin@example.com", true]);
+      assert.ok(l[0].added_at);
+      await expectErr("USER_NOT_FOUND", rpc("admin_add", ["nobody@example.com"]));
+      assert.equal((await rpc("admin_add", ["  NEW.person@example.com "])).added, true);
+      assert.equal((await rpc("admin_add", ["new.person@example.com"])).added, false);
+      assert.equal((await q("select * from admin_list()")).length, 2);
+      await expectErr("CANNOT_REMOVE_SELF", rpc("admin_remove", [ADMIN]));
+    });
+    await as("authenticated", NEWBIE, async () => {
+      assert.equal((await q("select is_admin() as a"))[0].a, true);
+      assert.equal((await rpc("admin_remove", [ADMIN])).removed, true);
+      // NEWBIE is now the only admin: removing anyone else is refused
+      await expectErr("LAST_ADMIN", rpc("admin_remove", [ADMIN]));
+    });
+    // restore
+    await q("insert into admins(user_id) values ($1)", [ADMIN]);
+    await q("delete from admins where user_id=$1", [NEWBIE]);
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("CANNOT_REMOVE_SELF", rpc("admin_remove", [ADMIN]));
+    });
+    ok("admin_list / admin_add / admin_remove incl. USER_NOT_FOUND, CANNOT_REMOVE_SELF, no-op re-add");
   }
 
   console.log(`\n${passed} checks passed`);

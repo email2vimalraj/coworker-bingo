@@ -19,7 +19,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <h1 className="text-2xl font-extrabold">Your account is not an admin</h1>
         <p className="text-slate-700">
           You&apos;re signed in as <span className="font-semibold">{user.email}</span>, but this
-          account isn&apos;t an admin. Ask an owner to add you to the <code>admins</code> table.
+          account isn&apos;t an admin. Ask an existing admin to add{" "}
+          <span className="font-semibold">{user.email}</span> on the Admins page.
         </p>
         <div className="flex justify-center">
           <SignOutButton />
@@ -35,7 +36,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/admin" className="text-lg font-extrabold text-accent">
             Coworker Bingo <span className="text-slate-500">Admin</span>
           </Link>
-          <SignOutButton />
+          <div className="flex items-center gap-1">
+            <Link href="/admin/admins" className="inline-flex min-h-11 items-center px-3 text-sm font-semibold text-slate-700">
+              Admins
+            </Link>
+            <SignOutButton />
+          </div>
         </div>
       </header>
       <div className="mx-auto max-w-5xl p-4">{children}</div>
