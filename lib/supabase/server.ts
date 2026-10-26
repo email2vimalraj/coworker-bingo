@@ -1,12 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { MISSING_ENV_MESSAGE, SUPABASE_KEY, SUPABASE_URL } from "@/lib/supabase/env";
 
 /** Server Supabase client bound to the request cookies (admin pages). */
 export async function createClient() {
   const cookieStore = await cookies();
+  if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error(MISSING_ENV_MESSAGE);
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    SUPABASE_KEY,
     {
       cookies: {
         getAll() {

@@ -8,17 +8,19 @@ import { readFileSync } from "node:fs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_PROMPTS } from "../lib/defaultPrompts";
 
-function env(name: string): string {
-  if (process.env[name]) return process.env[name] as string;
-  const line = readFileSync(".env.local", "utf8")
-    .split("\n")
-    .find((l) => l.startsWith(`${name}=`));
-  if (!line) throw new Error(`Missing ${name} (set it or add it to .env.local)`);
-  return line.slice(name.length + 1).trim();
+function env(...names: string[]): string {
+  for (const name of names) {
+    if (process.env[name]) return process.env[name] as string;
+    const line = readFileSync(".env.local", "utf8")
+      .split("\n")
+      .find((l) => l.startsWith(`${name}=`));
+    if (line && line.slice(name.length + 1).trim()) return line.slice(name.length + 1).trim();
+  }
+  throw new Error(`Missing ${names.join(" or ")} (set it or add it to .env.local)`);
 }
 
 const URL = env("NEXT_PUBLIC_SUPABASE_URL");
-const ANON = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const ANON = env("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY");
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@local.test";
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin12345";
 

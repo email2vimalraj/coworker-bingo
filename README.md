@@ -4,7 +4,7 @@ A mobile-friendly "get to know your coworker" bingo for live events (450+ player
 
 Players join a session by scanning a QR code, then fill squares by scanning coworkers who match a prompt. The coworker confirms on their own phone. Admins create sessions (time limit, ranking rules, winners), watch a live dashboard, and can delete sessions.
 
-Players need no login: joining returns a secret `player_token` kept in localStorage, and every player action is a `SECURITY DEFINER` Postgres RPC called directly from the browser with the anon key. Phones poll `player_poll(token)` every 3s, and every 1s while showing their own QR or waiting for a coworker's answer (see `lib/pollInterval.ts`).
+Players need no login: joining returns a secret `player_token` kept in localStorage, and every player action is a `SECURITY DEFINER` Postgres RPC called directly from the browser with the publishable key. Phones poll `player_poll(token)` every 3s, and every 1s while showing their own QR or waiting for a coworker's answer (see `lib/pollInterval.ts`).
 
 ## Deploy guide (Supabase + Vercel)
 
@@ -30,8 +30,8 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 
    | Name | Value |
    |---|---|
-   | `NEXT_PUBLIC_SUPABASE_URL` | Project URL |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon public key |
+   | `NEXT_PUBLIC_SUPABASE_URL` | Project URL, `https://<project-ref>.supabase.co` (Supabase: **Connect** button at the top of the project, or Settings > Data API) |
+   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key `sb_publishable_...` (Settings > API Keys). The legacy anon key also works, under this name or `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Never use the secret key (`sb_secret_...`) here: the app doesn't need it. |
    | `NEXT_PUBLIC_APP_URL` | your production URL, e.g. `https://coworker-bingo.vercel.app` (used in join QR codes) |
 
 3. Deploy. Then go back to Supabase > Authentication > URL Configuration: set **Site URL** to the production URL and add `https://<your-app>.vercel.app/**` (and any preview/custom domain you use) under **Redirect URLs**.
@@ -51,7 +51,7 @@ Create `.env.local` with the values `npm run db:start` prints (the local keys ar
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<ANON_KEY from db:start>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<PUBLISHABLE_KEY from db:start>
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
@@ -76,7 +76,7 @@ Local extras: Supabase Studio (browse tables) at http://127.0.0.1:54323.
 ## Load test (staging only)
 
 ```bash
-npm run load-test -- --url https://STAGING.supabase.co --anon-key ANON_KEY \
+npm run load-test -- --url https://STAGING.supabase.co --key sb_publishable_... \
   --session ABC123 --players 450 --minutes 5
 ```
 

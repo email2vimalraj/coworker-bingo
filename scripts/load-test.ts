@@ -1,7 +1,7 @@
 /**
  * Load test: simulates N players against a STAGING Supabase project.
  *
- *   npx tsx scripts/load-test.ts --url https://xxx.supabase.co --anon-key eyJ... \
+ *   npx tsx scripts/load-test.ts --url https://xxx.supabase.co --key sb_publishable_... \
  *     --session ABC123 --players 450 --minutes 5
  *
  * Flow: join N fake players (loadtest+i@example.com), poll player_poll every ~3s with jitter,
@@ -23,7 +23,9 @@ function arg(name: string, def?: string): string {
   return v;
 }
 const URL_ = arg("url", process.env.NEXT_PUBLIC_SUPABASE_URL);
-const KEY = arg("anon-key", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const KEY = process.argv.includes("--anon-key")
+  ? arg("anon-key") // legacy flag name
+  : arg("key", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const CODE = arg("session").toUpperCase();
 const N = Number(arg("players", "450"));
 const MINUTES = Number(arg("minutes", "5"));
