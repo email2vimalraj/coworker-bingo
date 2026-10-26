@@ -70,6 +70,10 @@ async function main() {
     p_prompts: DEFAULT_PROMPTS.slice(0, 24),
   });
   check("create_session", !created.error && !!created.data?.code, created.error);
+  const longName = await rpc(admin, "create_session", { p_name: "n".repeat(101), p_duration_seconds: 300, p_ranking_mode: "correct_then_time", p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 1, p_prompts: DEFAULT_PROMPTS.slice(0, 24) });
+  check("create_session rejects a 101-char name", longName.error?.includes("INVALID_INPUT") ?? false, longName.error);
+  const longDur = await rpc(admin, "create_session", { p_name: "x", p_duration_seconds: 28801, p_ranking_mode: "correct_then_time", p_require_full_card: false, p_winners_count: 1, p_max_squares_per_coworker: 1, p_prompts: DEFAULT_PROMPTS.slice(0, 24) });
+  check("create_session rejects duration > 28800", longDur.error?.includes("INVALID_INPUT") ?? false, longDur.error);
   const { id: sessionId, code } = created.data;
 
   // Realtime: count events the admin dashboard would receive.
@@ -198,6 +202,7 @@ async function main() {
     check("admin_revoke_claim", !rv.error && rv.data.status === "revoked", rv);
     const after = await poll(a.data.player_token);
     check("revoked square reopens on A's board", after.board[sq.data[0].cell_index].status === null, after.board[sq.data[0].cell_index]);
+    check("revoked square reports last_outcome 'revoked'", after.board[sq.data[0].cell_index].last_outcome === "revoked", after.board[sq.data[0].cell_index]);
     const rm = await rpc<{ removed: boolean; squares_lost_by_others: number }>(admin, "admin_remove_player", { p_player_id: c.data.player_id });
     check("admin_remove_player", !rm.error && rm.data.removed === true, rm);
     const gonePoll = await rpc(anon, "player_poll", { p_token: c.data.player_token });
@@ -221,6 +226,9 @@ async function main() {
     check("admin_add unknown email -> USER_NOT_FOUND", nf.error?.includes("USER_NOT_FOUND") ?? false, nf.error);
     const self = await rpc(admin, "admin_remove", { p_user_id: list.data.find((r) => r.is_me)?.user_id });
     check("admin_remove self -> CANNOT_REMOVE_SELF", self.error?.includes("CANNOT_REMOVE_SELF") ?? false, self.error);
+    const notAdmin = await rpc(admin, "admin_remove", { p_user_id: "00000000-0000-0000-0000-00000000dead" });
+    // With a single admin LAST_ADMIN wins; with several it is USER_NOT_FOUND (covered in test:db). Never {removed:true}.
+    check("admin_remove of a non-admin id is refused", !!notAdmin.error && /USER_NOT_FOUND|LAST_ADMIN/.test(notAdmin.error), notAdmin);
     const again = await rpc<{ added: boolean }>(admin, "admin_add", { p_email: ADMIN_EMAIL.toUpperCase() });
     check("admin_add existing admin is a no-op", !again.error && again.data.added === false, again);
   }

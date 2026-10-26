@@ -85,7 +85,9 @@ export function CellSheet({
           <p className="mb-3 rounded-xl bg-red-50 p-3 font-semibold text-red-700">
             {cell.last_outcome === "rejected"
               ? `${cell.last_outcome_name} said no. Try someone else!`
-              : "That request timed out. Try again!"}
+              : cell.last_outcome === "revoked"
+                ? "Removed by host. You can pick this square again."
+                : "That request timed out. Try again!"}
           </p>
         ) : null}
         {error ? <div className="mb-3"><ErrorBox>{error}</ErrorBox></div> : null}

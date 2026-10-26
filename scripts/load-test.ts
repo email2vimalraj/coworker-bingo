@@ -8,6 +8,7 @@
  * periodically create a claim on a random open cell against a random other player, the target
  * answers on its next poll (accepts ~80%), and everyone submits near the end.
  * The session must be started (status live) by an admin; the test waits for that.
+ * Add --after-end to keep polling after the session ends (reported as player_poll[ended]).
  * Clean up by deleting the session in the admin UI (cascades to players, boards, claims).
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -32,6 +33,9 @@ const MINUTES = Number(arg("minutes", "5"));
 const POLL_MS = Number(arg("poll-ms", "3000"));
 const CLAIM_EVERY_MS = Number(arg("claim-every-s", "20")) * 1000;
 const ACCEPT_RATE = 0.8;
+// --after-end: keep polling after the session ends (like phones on the results screen) and report
+// those polls separately as "player_poll[ended]".
+const AFTER_END = process.argv.includes("--after-end");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -40,23 +44,23 @@ const latencies = new Map<string, number[]>();
 const counts = new Map<string, { ok: number; err: number }>();
 const errorCodes = new Map<string, number>();
 
-async function call<T>(sb: SupabaseClient, fn: string, args: Record<string, unknown>): Promise<T | null> {
+async function call<T>(sb: SupabaseClient, fn: string, args: Record<string, unknown>, label = fn): Promise<T | null> {
   const t0 = performance.now();
   let res;
   try {
     res = await sb.rpc(fn, args);
   } catch (e) {
-    record(fn, performance.now() - t0, `NETWORK:${(e as Error).message.slice(0, 40)}`);
+    record(label, performance.now() - t0, `NETWORK:${(e as Error).message.slice(0, 40)}`);
     return null;
   }
   const dt = performance.now() - t0;
   if (res.error) {
     const msg = res.error.message || "";
     const code = ERROR_CODES.find((c) => msg.includes(c)) ?? `HTTP/${res.status}:${res.error.code ?? msg.slice(0, 40)}`;
-    record(fn, dt, code);
+    record(label, dt, code);
     return null;
   }
-  record(fn, dt, null);
+  record(label, dt, null);
   return res.data as T;
 }
 function record(fn: string, ms: number, err: string | null) {
@@ -96,12 +100,18 @@ async function runBot(bot: Bot, deadline: number) {
   let lastClaim = Date.now() + rand(0, CLAIM_EVERY_MS);
   let submitted = false;
   await sleep(rand(0, POLL_MS));
+  let ended = false;
   while (!stop && Date.now() < deadline) {
-    const p = await call<Poll>(bot.sb, "player_poll", { p_token: bot.token });
+    const p = await call<Poll>(bot.sb, "player_poll", { p_token: bot.token }, ended ? "player_poll[ended]" : "player_poll");
     if (p) {
       const status = p.session.status;
       if (status === "live") live = true;
-      if (status === "ended") break;
+      if (status === "ended") {
+        if (!AFTER_END) break;
+        ended = true;
+        await sleep(POLL_MS * rand(0.8, 1.3));
+        continue;
+      }
       for (const inc of p.incoming) {
         await call(bot.sb, "respond_claim", { p_token: bot.token, p_claim_id: inc.claim_id, p_accept: Math.random() < ACCEPT_RATE });
       }

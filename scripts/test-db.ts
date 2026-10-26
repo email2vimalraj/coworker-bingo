@@ -455,7 +455,13 @@ async function main() {
     const xp = (await as("anon", null, () => rpc("player_poll", [X.player_token]))) as unknown as Poll;
     assert.equal(xp.board[0].status, null);
     assert.equal(xp.me.correct, 1);
+    // the player sees why the square vanished
+    assert.equal(xp.board[0].last_outcome, "revoked");
+    assert.equal(xp.board[0].last_outcome_name, "Yo");
     assert.equal(await cl(X, 0, Y), "confirmed"); // same coworker, same cell again
+    const xp2 = (await as("anon", null, () => rpc("player_poll", [X.player_token]))) as unknown as Poll;
+    assert.equal(xp2.board[0].status, "confirmed");
+    assert.equal(xp2.board[0].last_outcome, null);
     assert.equal((await lbOf(s4.id))?.correct, 2);
     ok("admin_revoke_claim reopens the cell, frees the coworker allowance and drops the score");
 
@@ -495,6 +501,10 @@ async function main() {
       assert.equal((await rpc("admin_add", ["new.person@example.com"])).added, false);
       assert.equal((await q("select * from admin_list()")).length, 2);
       await expectErr("CANNOT_REMOVE_SELF", rpc("admin_remove", [ADMIN]));
+      // a user id that is not an admin: nothing deleted -> USER_NOT_FOUND (not a silent {removed:true})
+      await expectErr("USER_NOT_FOUND", rpc("admin_remove", [OTHER_USER]));
+      await expectErr("USER_NOT_FOUND", rpc("admin_remove", [crypto.randomUUID()]));
+      assert.equal((await q("select * from admin_list()")).length, 2);
     });
     await as("authenticated", NEWBIE, async () => {
       assert.equal((await q("select is_admin() as a"))[0].a, true);
@@ -509,6 +519,27 @@ async function main() {
       await expectErr("CANNOT_REMOVE_SELF", rpc("admin_remove", [ADMIN]));
     });
     ok("admin_list / admin_add / admin_remove incl. USER_NOT_FOUND, CANNOT_REMOVE_SELF, no-op re-add");
+    // admin_remove re-checks is_admin() after taking the table lock
+    {
+      const src = String((await q("select prosrc from pg_proc where proname = 'admin_remove'"))[0].prosrc);
+      assert.ok(src.indexOf("lock table admins") < src.lastIndexOf("is_admin()"), "is_admin() re-checked after the lock");
+      ok("admin_remove re-checks is_admin() after the lock");
+    }
+  }
+
+  // ---- create_session validation parity with update_session ----
+  {
+    const admin = <T,>(fn: () => Promise<T>) => as("authenticated", ADMIN, fn);
+    await admin(async () => {
+      await expectErr("INVALID_INPUT", rpc("create_session", ["n".repeat(101), 300, "correct_then_time", false, 1, 1, prompts]));
+      await expectErr("INVALID_INPUT", rpc("create_session", [" ".repeat(3) + "n".repeat(101), 300, "correct_then_time", false, 1, 1, prompts]));
+      await expectErr("INVALID_INPUT", rpc("create_session", ["Long", 28801, "correct_then_time", false, 1, 1, prompts]));
+      const edge = await rpc("create_session", ["n".repeat(100), 28800, "correct_then_time", false, 1, 1, prompts]);
+      assert.ok(edge.id);
+      // same limits as update_session
+      await expectErr("INVALID_INPUT", rpc("update_session", [edge.id, "n".repeat(101), 300, "correct_then_time", false, 1, 1, [], prompts, 1]));
+    });
+    ok("create_session rejects names over 100 characters and durations over 28800 s (like update_session)");
   }
 
   // ---- Item 14: Post-event stats ----
@@ -922,6 +953,29 @@ async function main() {
       }
       ok(`elapsed and reach time exclude pauses; leaderboard matches lib/ranking.ts (${mode})`);
     }
+
+    // _leaderboard computes elapsed inline; it must equal the _elapsed_at() reference, with and without pauses
+    const savedPauses = await q("select started_at, ended_at from session_pauses where session_id=$1", [es.id]);
+    for (const withPauses of [true, false]) {
+      if (!withPauses) await q("delete from session_pauses where session_id=$1", [es.id]);
+      for (const mode of ["correct_then_time", "lines", "full_card_fastest"] as const) {
+        await q("update sessions set ranking_mode=$1, lines_to_win=1 where id=$2", [mode, es.id]);
+        const lbRows = await q("select * from _leaderboard($1)", [es.id]);
+        assert.equal(lbRows.length, 4);
+        for (const r of lbRows) {
+          const ref = (await q(
+            "select case when p.submitted_at is not null then _elapsed_at(p.session_id, p.submitted_at) else s.duration_seconds::double precision end as e, (select _elapsed_at(p.session_id, max(c.resolved_at)) from claims c where c.player_id = p.id and c.status = 'confirmed' and c.cell_index = any (array[0,1,2,3,4])) as row0 from players p join sessions s on s.id = p.session_id where p.id = $1", [r.player_id]))[0];
+          assert.ok(Math.abs(Number(r.elapsed_seconds) - Number(ref.e)) < 1e-6, `${mode} pauses=${withPauses} elapsed ${r.elapsed_seconds} vs ${ref.e}`);
+          // row 0 (cells 0..4) complete -> in lines mode (lines_to_win=1) reach is the _elapsed_at of its last confirmation
+          if (mode === "lines" && r.reach_seconds !== null && ref.row0 !== null) {
+            assert.ok(Math.abs(Number(r.reach_seconds) - Number(ref.row0)) < 1e-6, `${mode} pauses=${withPauses} reach ${r.reach_seconds} vs ${ref.row0}`);
+          }
+        }
+      }
+    }
+    for (const sp of savedPauses) await q("insert into session_pauses(session_id, started_at, ended_at) values ($1,$2,$3)", [es.id, sp.started_at, sp.ended_at]);
+    await q("update sessions set ranking_mode='correct_then_time' where id=$1", [es.id]);
+    ok("_leaderboard elapsed/reach equal the _elapsed_at() reference with and without pauses (3 modes)");
 
     // end_session while paused closes the pause
     await admin(async () => {

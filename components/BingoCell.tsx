@@ -47,7 +47,9 @@ export function BingoCell({
       {sub ? (
         <span className="line-clamp-2 break-words text-[10px] font-bold sm:text-[11px]">{sub}</span>
       ) : cell.last_outcome ? (
-        <span className="text-[9px] font-bold text-red-600 sm:text-[11px]">Try again</span>
+        <span className="text-[9px] font-bold text-red-600 sm:text-[11px]">
+          {cell.last_outcome === "revoked" ? "Removed by host" : "Try again"}
+        </span>
       ) : null}
     </button>
   );

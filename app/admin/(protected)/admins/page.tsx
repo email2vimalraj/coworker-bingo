@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { rpc } from "@/lib/api";
-import { friendlyError } from "@/lib/errors";
+import { errorCodeOf, friendlyError } from "@/lib/errors";
 import { Button, Card, ErrorBox, Field, Spinner, inputClass } from "@/components/ui";
 
 interface AdminRow {
@@ -58,7 +58,12 @@ export default function AdminsPage() {
       setConfirmId(null);
       await load();
     } catch (err) {
-      setError(friendlyError(err));
+      if (errorCodeOf(err) === "USER_NOT_FOUND") {
+        // Someone else already removed them: refresh the list instead of showing the add-admin wording.
+        setConfirmId(null);
+        setError("That person is no longer an admin.");
+        await load();
+      } else setError(friendlyError(err));
     } finally {
       setBusy(false);
     }

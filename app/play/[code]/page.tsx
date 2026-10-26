@@ -66,7 +66,12 @@ export default function PlayPage() {
       .filter((c) => !c.status && c.last_outcome)
       .map((c) => ({
         key: `${c.cell_index}:${c.last_outcome}:${c.last_outcome_name}`,
-        msg: c.last_outcome === "rejected" ? `${c.last_outcome_name} said no` : "Request timed out",
+        msg:
+          c.last_outcome === "rejected"
+            ? `${c.last_outcome_name} said no`
+            : c.last_outcome === "revoked"
+              ? "Removed by host"
+              : "Request timed out",
       }));
     if (seen.current === null) {
       seen.current = new Set(keys.map((k) => k.key));

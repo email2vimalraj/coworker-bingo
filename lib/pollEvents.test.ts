@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { diffPolls } from "./pollEvents";
 
-const cell = (i: number, status: "pending" | "confirmed" | null, last_outcome: "rejected" | "expired" | null = null) => ({
+const cell = (i: number, status: "pending" | "confirmed" | null, last_outcome: "rejected" | "expired" | "revoked" | null = null) => ({
   cell_index: i,
   status,
   last_outcome,
@@ -30,6 +30,14 @@ describe("diffPolls", () => {
       new Set(),
     );
     expect(e.rejected).toEqual([1, 2]);
+  });
+  it("does not announce a host-removed (revoked) square as a rejection", () => {
+    const e = diffPolls(
+      { board: [cell(1, "confirmed")], incoming: [] },
+      { board: [cell(1, null, "revoked")], incoming: [] },
+      new Set(),
+    );
+    expect(e).toEqual({ newIncoming: [], confirmed: [], rejected: [] });
   });
   it("ignores cells that were not pending, and pending -> pending", () => {
     const e = diffPolls(

@@ -68,7 +68,7 @@ export interface BoardCell {
   status: "pending" | "confirmed" | null;
   claim_id: string | null;
   coworker_name: string | null;
-  last_outcome: "rejected" | "expired" | null;
+  last_outcome: "rejected" | "expired" | "revoked" | null;
   last_outcome_name: string | null;
 }
 
