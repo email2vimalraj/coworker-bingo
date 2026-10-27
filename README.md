@@ -11,8 +11,8 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0014_prompt_pool.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
-3. Authentication > Providers: make sure **Email** is enabled. For a small admin team, turn off "Allow new users to sign up" (Authentication > Sign In / Providers) so only users you create can log in.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0015_admin_create_account.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
+3. Authentication > Providers: make sure **Email** is enabled. Sign-ups can stay turned off ("Allow new users to sign up" under Authentication > Sign In / Providers): the app never uses them, and email confirmation is not needed.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
    ```sql
@@ -20,7 +20,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
    select id from auth.users where email = 'you@example.com';
    ```
 
-   Only users in `admins` can use admin RPCs and read tables (`is_admin()`).
+   Only users in `admins` can use admin RPCs and read tables (`is_admin()`). Further admins are added from the **Admins** page: enter their email and a temporary password (migration 0015, `admin_create`, creates a confirmed account directly in SQL, no service-role key). Share the password privately; they can change it on the same page. If the account already exists, the password is ignored.
 5. Project Settings > API: copy the **Project URL** and the **anon public** key. Never put the `service_role` key in this app.
 
 ### 2. Vercel

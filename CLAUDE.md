@@ -34,6 +34,7 @@ Before calling a change done: typecheck, lint, `npm test`, `npm run test:db`; pl
 ## Rules and gotchas
 
 - **Migrations:** `supabase/migrations/` is the source of truth for RPC names, argument names (all prefixed `p_`) and error codes. Add new numbered files (`0003_...sql`) and never edit applied ones. Local and hosted DBs already ran 0001–0002, and the files aren't idempotent. `test:db` loads every file in order.
+- **Admin accounts (0015):** `admin_create` inserts into `auth.users` and `auth.identities` (confirmed email+password user, so no service-role key is needed). It is the only place the app writes to the auth schema; GoTrue needs the token columns as `''`, not NULL.
 - **Player tokens:** admins have column-level `select` on `players` that excludes `player_token`. Never return a token from any RPC except `join_session`. So PostgREST `select("*")` or `players(count)` embeds on `players` fail with "permission denied". Use an admin RPC instead (see `admin_sessions()` in 0002).
 - **Ranking rules** exist twice and must stay identical: `lib/ranking.ts` and `session_leaderboard()` in SQL. `test:db` checks the two agree.
   - Order: correct desc, then elapsed asc, then `joined_at`.

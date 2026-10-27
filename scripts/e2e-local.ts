@@ -5,6 +5,7 @@
  *   npm run e2e:local
  */
 import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_PROMPTS } from "../lib/defaultPrompts";
 
@@ -240,6 +241,45 @@ async function main() {
     check("admin_remove of a non-admin id is refused", !!notAdmin.error && /USER_NOT_FOUND|LAST_ADMIN/.test(notAdmin.error), notAdmin);
     const again = await rpc<{ added: boolean }>(admin, "admin_add", { p_email: ADMIN_EMAIL.toUpperCase() });
     check("admin_add existing admin is a no-op", !again.error && again.data.added === false, again);
+  }
+  // ---- admin_create: admin creates an account that can sign in immediately ----
+  {
+    const stamp = Date.now();
+    const newEmail = `e2e-admin-${stamp}@example.test`;
+    const newPass = `pw-${stamp}-ok`;
+    try {
+      const cNoPw = await rpc(admin, "admin_create", { p_email: newEmail });
+      check("admin_create new email without password -> PASSWORD_REQUIRED", cNoPw.error?.includes("PASSWORD_REQUIRED") ?? false, cNoPw.error);
+      const cWeak = await rpc(admin, "admin_create", { p_email: newEmail, p_password: "short" });
+      check("admin_create short password -> WEAK_PASSWORD", cWeak.error?.includes("WEAK_PASSWORD") ?? false, cWeak.error);
+      const anonCreate = await rpc(anon, "admin_create", { p_email: newEmail, p_password: newPass });
+      check("anon cannot call admin_create", !!anonCreate.error, anonCreate);
+      const made = await rpc<{ user_id: string; created: boolean; added: boolean }>(admin, "admin_create", { p_email: newEmail.toUpperCase(), p_password: newPass });
+      check("admin_create makes a new account", !made.error && made.data.created === true && made.data.added === true, made);
+      const fresh = newClient();
+      const si = await fresh.auth.signInWithPassword({ email: newEmail, password: newPass });
+      check("new account signs in with email + password", !si.error && !!si.data.session, si.error?.message);
+      const freshList = await rpc<{ email: string }[]>(fresh, "admin_list");
+      check("new admin can call admin_list and sees themselves", !freshList.error && freshList.data.some((r) => r.email === newEmail), freshList);
+      const wrong = await newClient().auth.signInWithPassword({ email: newEmail, password: "wrong-password-1" });
+      check("new account rejects a wrong password", !!wrong.error);
+      const upd = await fresh.auth.updateUser({ password: `${newPass}-changed` });
+      check("new admin can change their own password", !upd.error, upd.error?.message);
+      const second = await rpc<{ user_id: string; created: boolean; added: boolean }>(admin, "admin_create", { p_email: newEmail, p_password: "ignored-password-1" });
+      check("admin_create existing email: created false, added false", !second.error && second.data.created === false && second.data.added === false && second.data.user_id === made.data.user_id, second);
+      const stillOld = await newClient().auth.signInWithPassword({ email: newEmail, password: `${newPass}-changed` });
+      check("existing user's password was not overwritten", !stillOld.error, stillOld.error?.message);
+      // existing account that is no longer an admin gets re-added
+      const rem = await rpc(admin, "admin_remove", { p_user_id: made.data.user_id });
+      const readd = await rpc<{ created: boolean; added: boolean }>(admin, "admin_create", { p_email: newEmail });
+      check("admin_create re-adds an existing non-admin account", !rem.error && !readd.error && readd.data.created === false && readd.data.added === true, [rem.error, readd]);
+    } finally {
+      try {
+        execSync(`docker exec supabase_db_coworker-bingo psql -U postgres -c "delete from admins where user_id in (select id from auth.users where email = '${newEmail}'); delete from auth.users where email = '${newEmail}';"`, { stdio: "ignore" });
+      } catch {
+        console.log(`  (could not clean up ${newEmail}; delete it manually)`);
+      }
+    }
   }
   // ---- Item 14: Post-event stats ----
   type StatsJson = {

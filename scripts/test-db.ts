@@ -8,14 +8,29 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join as pjoin } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { citext } from "@electric-sql/pglite/contrib/citext";
+import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { rankPlayers, type RankingMode } from "../lib/ranking";
 
 const root = pjoin(__dirname, "..");
-const db = new PGlite({ extensions: { citext } });
+const db = new PGlite({ extensions: { citext, pgcrypto } });
 
 const STUB = `
 create schema auth;
-create table auth.users (id uuid primary key, email text);
+create schema extensions;
+create extension pgcrypto schema extensions;
+create table auth.users (
+  instance_id uuid, id uuid primary key, aud text, role text, email text, encrypted_password text,
+  email_confirmed_at timestamptz, raw_app_meta_data jsonb, raw_user_meta_data jsonb,
+  created_at timestamptz, updated_at timestamptz,
+  confirmation_token text, recovery_token text, email_change_token_new text, email_change text,
+  email_change_token_current text, reauthentication_token text, phone_change text, phone_change_token text
+);
+create table auth.identities (
+  id uuid primary key default gen_random_uuid(), provider_id text not null, user_id uuid not null references auth.users(id),
+  identity_data jsonb not null, provider text not null, last_sign_in_at timestamptz, created_at timestamptz, updated_at timestamptz,
+  email text generated always as (lower(identity_data ->> 'email')) stored,
+  unique (provider_id, provider)
+);
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 create role anon nologin;
@@ -580,6 +595,47 @@ async function main() {
       assert.ok(src.indexOf("lock table admins") < src.lastIndexOf("is_admin()"), "is_admin() re-checked after the lock");
       ok("admin_remove re-checks is_admin() after the lock");
     }
+  }
+
+  // ---- admin_create ----
+  {
+    const NEWID_EMAIL = "Brand.New@Example.com";
+    await as("authenticated", OTHER_USER, async () => {
+      await expectErr("NOT_ADMIN", rpc("admin_create", [NEWID_EMAIL, "longenough1"]));
+    });
+    await expectErr("permission denied", as("anon", null, () => rpc("admin_create", [NEWID_EMAIL, "longenough1"])));
+    const asAdmin = <T,>(fn: () => Promise<T>) => as("authenticated", ADMIN, fn);
+    await asAdmin(async () => {
+      await expectErr("INVALID_INPUT", rpc("admin_create", ["not-an-email", "longenough1"]));
+      await expectErr("PASSWORD_REQUIRED", rpc("admin_create", [NEWID_EMAIL]));
+      await expectErr("PASSWORD_REQUIRED", rpc("admin_create", [NEWID_EMAIL, "   "]));
+      await expectErr("WEAK_PASSWORD", rpc("admin_create", [NEWID_EMAIL, "short"]));
+      await expectErr("WEAK_PASSWORD", rpc("admin_create", [NEWID_EMAIL, "x".repeat(73)]));
+    });
+    assert.equal((await q("select count(*)::int as n from auth.users where lower(email) = 'brand.new@example.com'"))[0].n, 0);
+    const r = await asAdmin(() => rpc("admin_create", ["  " + NEWID_EMAIL + " ", "longenough1"]));
+    assert.equal(r.created, true);
+    assert.equal(r.added, true);
+    assert.ok(!JSON.stringify(r).includes("longenough1"));
+    const u = (await q("select * from auth.users where id = $1", [r.user_id]))[0];
+    assert.equal(u.email, "brand.new@example.com");
+    assert.equal(u.aud, "authenticated");
+    assert.ok(u.email_confirmed_at);
+    assert.equal(u.confirmation_token, "");
+    assert.notEqual(u.encrypted_password, "longenough1");
+    assert.equal((await q("select count(*)::int as n from auth.identities where user_id = $1 and provider = 'email'", [r.user_id]))[0].n, 1);
+    assert.equal((await q("select count(*)::int as n from admins where user_id = $1", [r.user_id]))[0].n, 1);
+    // existing email: no new user, password ignored and untouched
+    const again = await asAdmin(() => rpc("admin_create", ["BRAND.NEW@example.com", "otherpassword1"]));
+    assert.deepEqual([again.user_id, again.created, again.added], [r.user_id, false, false]);
+    assert.equal((await q("select encrypted_password as h from auth.users where id = $1", [r.user_id]))[0].h, u.encrypted_password);
+    // existing account that is not yet an admin
+    const NOADMIN = "00000000-0000-0000-0000-0000000000d4";
+    await q("insert into auth.users(id, email) values ($1, 'plain@example.com')", [NOADMIN]);
+    const ex = await asAdmin(() => rpc("admin_create", ["plain@example.com"]));
+    assert.deepEqual([ex.user_id, ex.created, ex.added], [NOADMIN, false, true]);
+    await q("delete from admins where user_id in ($1, $2)", [r.user_id, NOADMIN]);
+    ok("admin_create: NOT_ADMIN, INVALID_INPUT, PASSWORD_REQUIRED, WEAK_PASSWORD, creates user+identity+admin, existing email untouched");
   }
 
   // ---- create_session validation parity with update_session ----

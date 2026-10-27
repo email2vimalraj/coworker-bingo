@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { rpc } from "@/lib/api";
+import { getSupabase } from "@/lib/supabase/client";
 import { errorCodeOf, friendlyError } from "@/lib/errors";
 import { Button, Card, ErrorBox, Field, Spinner, inputClass } from "@/components/ui";
 
@@ -17,7 +18,13 @@ export default function AdminsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [newPw, setNewPw] = useState("");
+  const [newPw2, setNewPw2] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwNotice, setPwNotice] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -37,16 +44,50 @@ export default function AdminsPage() {
     setBusy(true);
     setError(null);
     setNotice(null);
+    const shown = email.trim();
     try {
-      const r = await rpc<{ added: boolean }>("admin_add", { p_email: email });
-      setNotice(r.added ? `${email.trim()} is now an admin.` : `${email.trim()} is already an admin.`);
+      const r = await rpc<{ created: boolean; added: boolean }>("admin_create", {
+        p_email: email,
+        p_password: password.trim() ? password : null,
+      });
+      setNotice(
+        r.created
+          ? `Account created for ${shown}. They can sign in at /admin/login with the temporary password.`
+          : r.added
+            ? `${shown} is now an admin.`
+            : `${shown} is already an admin.`,
+      );
       setEmail("");
+      setPassword("");
       await load();
     } catch (err) {
-      setError(friendlyError(err));
+      if (errorCodeOf(err) === "PASSWORD_REQUIRED") {
+        setError("No account exists for that email yet — set a temporary password.");
+        passwordRef.current?.focus();
+      } else setError(friendlyError(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError(null);
+    setPwNotice(null);
+    if (newPw !== newPw2) {
+      setPwError("The two passwords don't match.");
+      return;
+    }
+    setBusy(true);
+    const { error: upErr } = await getSupabase().auth.updateUser({ password: newPw });
+    setBusy(false);
+    if (upErr) {
+      setPwError(upErr.message || "Couldn't change the password.");
+      return;
+    }
+    setPwNotice("Password changed.");
+    setNewPw("");
+    setNewPw2("");
   }
 
   async function remove(id: string) {
@@ -129,7 +170,7 @@ export default function AdminsPage() {
       <Card>
         <form onSubmit={add} className="space-y-3">
           <h2 className="text-lg font-bold">Add an admin</h2>
-          <Field label="Email" hint="They must first create an account at /admin/login">
+          <Field label="Email">
             <input
               className={inputClass}
               type="email"
@@ -139,8 +180,59 @@ export default function AdminsPage() {
               required
             />
           </Field>
+          <Field
+            label="Temporary password (optional)"
+            hint="Needed only if they don't have an account yet. Share it with them privately; they can change it after signing in."
+          >
+            <input
+              ref={passwordRef}
+              className={inputClass}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+            />
+          </Field>
           <Button type="submit" disabled={busy || !email.trim()}>
             Add admin
+          </Button>
+        </form>
+      </Card>
+
+      <Card>
+        <form onSubmit={changePassword} className="space-y-3">
+          <h2 className="text-lg font-bold">Change my password</h2>
+          <Field label="New password">
+            <input
+              className={inputClass}
+              type="password"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+          </Field>
+          <Field label="Confirm new password">
+            <input
+              className={inputClass}
+              type="password"
+              value={newPw2}
+              onChange={(e) => setNewPw2(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+          </Field>
+          {pwError ? <ErrorBox>{pwError}</ErrorBox> : null}
+          {pwNotice ? (
+            <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
+              {pwNotice}
+            </p>
+          ) : null}
+          <Button type="submit" disabled={busy || !newPw}>
+            Change password
           </Button>
         </form>
       </Card>

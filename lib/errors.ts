@@ -30,6 +30,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   PLAYER_NOT_FOUND: "That player no longer exists. They may have already been removed.",
   USER_NOT_FOUND:
     "No account with that email yet. They must first create an account at /admin/login.",
+  PASSWORD_REQUIRED: "No account exists for that email yet. Set a temporary password.",
+  WEAK_PASSWORD: "The password must be 8 to 72 characters.",
   CANNOT_REMOVE_SELF: "You can't remove yourself as an admin.",
   LAST_ADMIN: "You can't remove the last admin.",
   CODE_GENERATION_FAILED: "Couldn't generate a unique code. Please try again.",
