@@ -17,6 +17,7 @@ from (values
   ('0012_claim_by_username.sql',     to_regprocedure('public._resolve_coworker(uuid,text)') is not null),
   ('0013_username_option.sql',      exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'allow_username_claims')),
   ('0014_prompt_pool.sql',          coalesce((select prosrc like '%DUPLICATE_PROMPT%' from pg_proc where oid = to_regprocedure('public.update_session(uuid,text,integer,ranking_mode,boolean,integer,integer,text[],text[],integer,boolean)')), false)),
-  ('0015_admin_create_account.sql',  to_regprocedure('public.admin_create(text,text)') is not null)
+  ('0015_admin_create_account.sql',  to_regprocedure('public.admin_create(text,text)') is not null),
+  ('0016_admin_db_health.sql',      to_regprocedure('public.admin_db_health()') is not null)
 ) as m(file, applied)
 order by m.file;

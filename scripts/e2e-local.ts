@@ -483,6 +483,14 @@ async function main() {
     await admin.from("sessions").delete().eq("id", ps.data.id);
   }
 
+  // ---- admin_db_health (0016) ----
+  {
+    const h = await rpc<Record<string, unknown>>(admin, "admin_db_health");
+    check("admin_db_health returns numeric aggregates for an admin", !h.error && typeof h.data.conn_total === "number" && typeof h.data.xact_commit === "number" && typeof h.data.db_size_bytes === "number" && Array.isArray(h.data.unavailable), h);
+    const denied = await rpc(anon, "admin_db_health");
+    check("anon cannot call admin_db_health", !!denied.error, denied);
+  }
+
   const del = await admin.from("sessions").delete().eq("id", sessionId);
   const gone = await admin.from("players").select("id").eq("session_id", sessionId);
   check("delete session cascades", !del.error && (gone.data ?? []).length === 0, del.error);

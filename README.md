@@ -11,7 +11,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0015_admin_create_account.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0016_admin_db_health.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
 3. Authentication > Providers: make sure **Email** is enabled. Sign-ups can stay turned off ("Allow new users to sign up" under Authentication > Sign In / Providers): the app never uses them, and email confirmation is not needed.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
@@ -60,7 +60,8 @@ Then `npm run dev` and open http://localhost:3000.
 | Command | What it does |
 |---|---|
 | `npm run e2e:local` | 39 end-to-end checks against the local Supabase: every RPC, security rules, realtime, ranking, delete |
-| `npm run load-test -- --session DEMO23 --players 450 --minutes 2` | 450 simulated players (start the session in the admin UI while it waits) |
+| `npm run load:e2e -- ...` | automated end-to-end load test with live view and report (see Load test) |
+| `npm run load-test -- --session DEMO23 --players 450 --minutes 2` | older player-only simulation (you create/start the session in the admin UI) |
 | `npm run db:reset` | wipe the local DB and re-apply migration + seed (then re-run `npm run local:admin`) |
 | `npm run db:stop` | stop the Docker containers |
 
@@ -73,24 +74,33 @@ Local extras: Supabase Studio (browse tables) at http://127.0.0.1:54323.
 - The camera scanner needs HTTPS (`localhost` only counts on the same machine). To test scanning with real phones use a Vercel preview URL (set `NEXT_PUBLIC_APP_URL` for that environment accordingly) or an HTTPS tunnel.
 - `NEXT_PUBLIC_APP_URL` should match the URL players actually open, otherwise join QR codes point to the wrong host.
 
-## Load test (staging only)
+## Load test
+
+`npm run load:e2e` is a one-command, fully automated test: it signs in as an admin, creates a session, joins N bots over a ramp, starts the game, simulates play, optionally pauses/resumes, ends the game, keeps polling the results, deletes the session and writes a report. Apply migration `0016_admin_db_health.sql` first (without it the test still runs, but with no database metrics).
 
 ```bash
-npm run load-test -- --url https://STAGING.supabase.co --key sb_publishable_... \
-  --session ABC123 --players 450 --minutes 5
+export LOADTEST_ADMIN_EMAIL=you@company.com LOADTEST_ADMIN_PASSWORD=...   # env only, never flags
+npm run load:e2e -- --url https://PROJECT.supabase.co --key sb_publishable_... \
+  --players 470 --minutes 5
 ```
 
-It joins N fake players (`loadtest+i@example.com`), polls `player_poll` every ~3s with jitter (`--poll-ms 1000` simulates the 1s worst case), makes claims on random open cells against random other players (targets accept ~80% on their next poll) and submits near the end. It prints per-RPC counts, p50/p95/p99 latency, and a histogram of error codes. Business errors like `COWORKER_LIMIT` or `CELL_TAKEN` are normal; watch for `NETWORK:*` / `HTTP/*` errors and p95 above ~500ms.
+- **Credentials:** the admin login comes only from the two env vars and is never logged. Use the publishable key; a secret/service-role key is refused.
+- **Confirmation:** for any host other than localhost the script prints the project ref and asks you to type it (or pass `--yes`).
+- **Do not run it during a real game.** It creates ~470 fake players and real traffic on the project. Run it from a wired connection (Wi-Fi hiccups show up as failures). On a Mac, 470 bots plus TLS use a lot of CPU in one process; if the Mac is the bottleneck, latencies rise on the client side only. Check Activity Monitor.
+- **Flags** (defaults): `--players 470`, `--minutes 5` (live play time), `--join-ramp-s 60`, `--prompts 24`, `--pause-at-s N` with `--pause-s 30`, `--after-end-s 60`, `--qr-open-pct 15` (players polling at 1s), `--claim-every-s 20`, `--keep` (do not delete the session), `--report-dir load-reports`, `--yes`. Threshold flags: `--max-fail-pct 0.1`, `--p95-ms 500`, `--rt-min-pct 99`, `--rt-p95-ms 5000`.
+- **Live view (every 5s):** phase and time, players joined/active/submitted, req/s, p50/p95 per RPC for the last window, failures (red when above 0), expected errors, realtime events received vs claims created and lag p95, and database connections (active/idle/waiting), tx/s, cache hit %, longest running query. Slow p95 (over the limit), lock waiters and lag over the limit are shown in red.
+- **Report:** `load-reports/<runid>/` (git-ignored) holds `summary.json` (config without credentials, totals, per-RPC and per-phase stats, thresholds, verdict), `timeseries.csv` (one row per 5s window) and `report.html` (open it in a browser: verdict table, charts of p95 per RPC, req/s, failures, realtime lag, connections and tx/s with phase markers, then the tables).
+- **PASS means all of:** failures (NETWORK, HTTP/5xx, timeouts) below 0.1% of all calls; p95 below 500 ms for `join_session`, `player_poll[live]`, `create_claim`, `respond_claim` and `player_poll[ended]`; at least 99% of claim INSERT events received by the admin realtime subscription with p95 lag below 5 s; all N players joined. Exit code 0 on PASS, 1 on FAIL. Business errors such as `COWORKER_LIMIT`, `CELL_TAKEN`, `PAUSED` are "expected" and not failures.
+- **Cleanup:** the session is deleted at the end (players, boards and claims cascade) and the script checks that it is gone. Ctrl+C stops the bots, cleans up and still writes the report (verdict FAIL, marked interrupted); a second Ctrl+C exits at once. If cleanup ever fails the script says so: delete the session named `Load test ...` in the admin UI.
+- **Database stats:** come from the admin-only `admin_db_health()` RPC (aggregate numbers only). If the hosted role cannot read a view, that part is skipped and listed in `summary.json` under `db.unavailable_stats`.
 
-Steps: create a session in the admin UI on the **staging** project, run the script (it joins first, then waits), press **Start** in the admin UI while it runs, and let it finish. Optional flags: `--poll-ms`, `--claim-every-s`.
-
-**Run it only against a separate staging Supabase project**, never the production one, and never at someone else's project: it creates hundreds of rows and generates real traffic. Clean up by deleting the session in the admin UI (or `delete from sessions where code = 'ABC123'`): players, boards and claims cascade.
+`npm run load-test` (`scripts/load-test.ts`) still works as the older player-only simulation against a session you create and start yourself.
 
 ## Event-day checklist
 
 - [ ] **Wake the Supabase project the day before.** Free projects pause after 7 days of inactivity; open the dashboard and restore it if paused, then load the app once.
 - [ ] Run the migration on the production project and confirm `select * from admins` has you.
-- [ ] Run the load test on a staging project of the same plan and check p95 < 500ms and no `HTTP/*` errors.
+- [ ] Run `npm run load:e2e` (not on the day of a real game) and check it ends in PASS.
 - [ ] Vercel Hobby is for **non-commercial use** only. Confirm that an internal company event is acceptable, or use a paid plan.
 - [ ] Verify `NEXT_PUBLIC_APP_URL`, Supabase Site URL / Redirect URLs, and that the join QR on the Present screen opens the right page on a phone (cellular and venue Wi-Fi).
 - [ ] Do a 2-phone dress rehearsal on the production URL, then delete the rehearsal session.

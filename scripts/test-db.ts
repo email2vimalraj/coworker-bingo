@@ -1154,6 +1154,24 @@ async function main() {
     ok("end_session while paused closes the pause; pause/extend/resume rejected after the end");
   }
 
+  // admin_db_health (0016): admin-only aggregate numbers
+  {
+    const adminFnsHealth = "admin_db_health()";
+    const priv = await q("select has_function_privilege('anon', $1::regprocedure, 'execute') as a, has_function_privilege('public', $1::regprocedure, 'execute') as p", [adminFnsHealth]);
+    assert.deepEqual(priv[0], { a: false, p: false });
+    await expectErr("permission denied", as("anon", null, () => q("select admin_db_health()")));
+    await as("authenticated", OTHER_USER, async () => { await expectErr("NOT_ADMIN", q("select admin_db_health()")); });
+    ok("admin_db_health: anon denied, non-admin NOT_ADMIN");
+    const h = await as("authenticated", ADMIN, async () => (await q("select admin_db_health() as h"))[0].h as Row);
+    for (const k of ["conn_active", "conn_idle", "conn_total", "waiting_locks", "longest_active_s", "xact_commit", "xact_rollback", "deadlocks", "blks_hit", "blks_read", "temp_bytes", "db_size_bytes"]) {
+      const val = h[k];
+      assert.ok(val === undefined ? (h.unavailable as string[]).length > 0 : typeof val === "number", `${k}: ${String(val)}`);
+    }
+    assert.ok(Array.isArray(h.unavailable));
+    assert.ok(!JSON.stringify(h).match(/query|usename|client_addr/));
+    ok("admin_db_health: admin gets numeric aggregates, no query text or user info");
+  }
+
   console.log(`\n${passed} checks passed`);
 }
 

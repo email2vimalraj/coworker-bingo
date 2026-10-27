@@ -16,6 +16,7 @@ npx supabase migration up   # apply new migration files without wiping data
 npm run typecheck && npm run lint && npm test   # unit tests: lib/**/*.test.ts (vitest)
 npm run test:db        # runs all migrations in PGlite with a stubbed auth schema, ~30 SQL checks
 npm run e2e:local      # ~80 checks against the running local Supabase (RPCs, RLS, realtime, delete)
+npm run load:e2e -- --players 470 --minutes 5   # automated e2e load test + report (needs LOADTEST_ADMIN_EMAIL/PASSWORD; uses admin_db_health() from 0016)
 npm run load-test -- --session DEMO23 --players 450 --minutes 2 [--poll-ms 1000]
 ```
 
