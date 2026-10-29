@@ -148,15 +148,9 @@ export default function PlayPage() {
         {result?.is_winner ? (
           <div className="rounded-2xl bg-amber-400 p-4 text-center text-amber-950 shadow">
             <p className="text-3xl font-black">
-              {result.host_pick && result.prize_place
-                ? `You won ${ordinal(result.prize_place)} prize!`
-                : result.prize_rank
-                  ? `You won ${ordinal(result.prize_rank)} prize!`
-                  : "You won!"}
+              {result.prize_rank ? `You won ${ordinal(result.prize_rank)} prize!` : "You won!"}
             </p>
-            <p className="text-base font-semibold">
-              {result.host_pick ? "Chosen by the host. Congratulations!" : "Congratulations!"}
-            </p>
+            <p className="text-base font-semibold">Congratulations!</p>
           </div>
         ) : null}
         <Card>

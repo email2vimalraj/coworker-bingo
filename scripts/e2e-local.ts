@@ -483,64 +483,6 @@ async function main() {
     await admin.from("sessions").delete().eq("id", ps.data.id);
   }
 
-  // ---- host-picked winners (0018) ----
-  {
-    const hs = await rpc<{ id: string; code: string }>(admin, "create_session", {
-      p_name: "E2E picks", p_duration_seconds: 300, p_ranking_mode: "correct_then_time", p_require_full_card: true,
-      p_winners_count: 2, p_max_squares_per_coworker: 1, p_prompts: DEFAULT_PROMPTS.slice(0, 24),
-    });
-    const hp: { player_id: string; player_token: string }[] = [];
-    for (let i = 0; i < 3; i++) {
-      const j = await rpc<{ player_id: string; player_token: string }>(anon, "join_session", { p_code: hs.data.code, p_full_name: `Pick ${i}`, p_email: `pick${i}@example.com` });
-      hp.push(j.data);
-    }
-    await rpc(admin, "start_session", { p_session_id: hs.data.id });
-    const early = await rpc(admin, "admin_award_prize", { p_player_id: hp[0].player_id });
-    check("admin_award_prize while live -> NOT_ENDED", early.error?.includes("NOT_ENDED") ?? false, early.error);
-    await rpc(admin, "end_session", { p_session_id: hs.data.id });
-    const deniedAward = await rpc(anon, "admin_award_prize", { p_player_id: hp[0].player_id });
-    check("anon cannot call admin_award_prize", !!deniedAward.error, deniedAward);
-
-    let seen = 0;
-    let subscribedP = false;
-    const ch = admin
-      .channel(`e2e-picks-${hs.data.id}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "players", filter: `session_id=eq.${hs.data.id}` }, (e) => {
-        if ((e.new as { award_place?: number | null }).award_place) seen++;
-      })
-      .subscribe((st) => {
-        if (st === "SUBSCRIBED") subscribedP = true;
-      });
-    for (let i = 0; i < 50 && !subscribedP; i++) await sleep(100);
-    await sleep(6000);
-
-    const a1 = await rpc<{ player_id: string; place: number }>(admin, "admin_award_prize", { p_player_id: hp[2].player_id });
-    const a2 = await rpc<{ player_id: string; place: number }>(admin, "admin_award_prize", { p_player_id: hp[0].player_id });
-    check("host picks take places 1 and 2 (nobody has a full card)", a1.data?.place === 1 && a2.data?.place === 2, [a1, a2]);
-    const full = await rpc(admin, "admin_award_prize", { p_player_id: hp[1].player_id });
-    check("third award -> NO_FREE_PLACE", full.error?.includes("NO_FREE_PLACE") ?? false, full.error);
-    const again = await rpc(admin, "admin_award_prize", { p_player_id: hp[2].player_id });
-    check("awarding a winner again -> ALREADY_WINNER", again.error?.includes("ALREADY_WINNER") ?? false, again.error);
-    await sleep(2500);
-    check("admin realtime sees players.award_place updates", seen >= 2, seen);
-
-    const lbp = await rpc<{ player_id: string; is_winner: boolean; host_pick: boolean; prize_place: number | null }[]>(admin, "session_leaderboard", { p_session_id: hs.data.id });
-    const w = (lbp.data ?? []).filter((r) => r.is_winner).map((r) => [r.player_id, r.host_pick, r.prize_place]);
-    check("session_leaderboard marks both picks", w.length === 2 && w.some((r) => r[0] === hp[2].player_id && r[1] === true && r[2] === 1), lbp.data);
-    const col = await admin.from("players").select("id, award_place").eq("session_id", hs.data.id);
-    check("admin can read players.award_place", !col.error && (col.data ?? []).filter((r) => r.award_place).length === 2, col.error);
-    const tok = await admin.from("players").select("player_token").eq("session_id", hs.data.id);
-    check("player_token still not readable by admins", !!tok.error, tok.data);
-    const pw = (await rpc<Poll & { result: { host_pick: boolean; prize_place: number | null } }>(anon, "player_poll", { p_token: hp[2].player_token })).data;
-    check("player_poll result: host_pick and prize_place", pw.result?.is_winner === true && pw.result.host_pick === true && pw.result.prize_place === 1, pw.result);
-
-    const cleared = await rpc(admin, "admin_clear_prize", { p_player_id: hp[2].player_id });
-    const a3 = await rpc<{ place: number }>(admin, "admin_award_prize", { p_player_id: hp[1].player_id });
-    check("clear frees place 1 and the next award takes it", !cleared.error && a3.data?.place === 1, [cleared, a3]);
-    await admin.removeChannel(ch);
-    await admin.from("sessions").delete().eq("id", hs.data.id);
-  }
-
   // ---- admin_db_health (0016) ----
   {
     const h = await rpc<Record<string, unknown>>(admin, "admin_db_health");

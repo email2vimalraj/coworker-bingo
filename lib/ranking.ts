@@ -2,7 +2,7 @@ import { lineCompletionTimes, reachTime, type ConfirmedCell } from "./lines";
 
 /**
  * Ranking rules. Must stay identical to the SQL function `_leaderboard`
- * (latest definition: supabase/migrations/0018_host_picked_winners.sql; the rules are as in 0011). Host picks (0018) are layered on top in lib/prizes.ts.
+ * (latest definition: supabase/migrations/0005_lines_mode.sql; pause-aware elapsed time from 0006).
  *
  * - correct   = confirmed squares (0-24)
  * - elapsed   = submittedAt - startedAt, else the full duration

@@ -11,7 +11,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0018_host_picked_winners.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0017_present_leaderboard_option.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
 3. Authentication > Providers: make sure **Email** is enabled. Sign-ups can stay turned off ("Allow new users to sign up" under Authentication > Sign In / Providers): the app never uses them, and email confirmation is not needed.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
@@ -105,7 +105,6 @@ npm run load:e2e -- --url https://PROJECT.supabase.co --key sb_publishable_... \
 - [ ] Verify `NEXT_PUBLIC_APP_URL`, Supabase Site URL / Redirect URLs, and that the join QR on the Present screen opens the right page on a phone (cellular and venue Wi-Fi).
 - [ ] Do a 2-phone dress rehearsal on the production URL, then delete the rehearsal session.
 - [ ] Project the **Present** page (`/admin/sessions/ID/present`), full-screen; keep one admin tab open on the dashboard. The live Top 10 on the projector is off by default (totals only, so the winners stay a surprise); turn on "Show live Top 10 on the Present screen" on the dashboard if you want it.
-- [ ] After the game ends, if the rules left prize places empty (for example nobody reached 24/24 with a full card required), the dashboard says so. Use **Give prize** on a leaderboard row (or in Manage) to hand the next free place to any player, and **Remove prize** to take it back. Automatic winners are never changed; picks show as "Host's pick" on the projector and on the player's phone (migration `0018`).
 - [ ] After the event: export the CSV, then delete the session to remove players' names and emails.
 
 ## Known limitations
@@ -131,7 +130,7 @@ Errors are raised as the exception message: `INVALID_INPUT`, `EMAIL_TAKEN`, `SES
 
 ## Ranking
 
-See `lib/ranking.ts` (identical to the SQL `_leaderboard`): correct squares desc, then elapsed asc (non-submitters get the full duration); `full_card_fastest` ranks only 24/24 boards; `require_full_card` limits winners to 24/24; a player needs at least 1 confirmed square to be eligible to win in every mode; ties share a rank; `joined_at` is the final ordering tiebreak. Host picks (`players.award_place`, `admin_award_prize` / `admin_clear_prize`) are a layer on top: after the end the host can fill places `k+1..winners_count`, where `k` is the number of rule winners; ranks and rule winners are unchanged (`lib/prizes.ts`).
+See `lib/ranking.ts` (identical to the SQL `_leaderboard`): correct squares desc, then elapsed asc (non-submitters get the full duration); `full_card_fastest` ranks only 24/24 boards; `require_full_card` limits winners to 24/24; a player needs at least 1 confirmed square to be eligible to win in every mode; ties share a rank; `joined_at` is the final ordering tiebreak.
 
 ## Tests
 

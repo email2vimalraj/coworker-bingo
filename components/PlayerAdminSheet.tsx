@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { rpc } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { ordinal } from "@/lib/format";
 import type { LeaderboardRow } from "@/lib/supabase/types";
 import { Button, ErrorBox, Spinner } from "@/components/ui";
 
@@ -19,10 +18,7 @@ export function PlayerAdminSheet({
   player,
   onClose,
   onChanged,
-  canAward = false,
 }: {
-  /** True once the game has ended and a prize place is still empty. */
-  canAward?: boolean;
   player: LeaderboardRow;
   onClose: () => void;
   onChanged: () => void;
@@ -33,7 +29,6 @@ export function PlayerAdminSheet({
   const [undoId, setUndoId] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const [lost, setLost] = useState<number | null>(null);
-  const [clearing, setClearing] = useState(false);
 
   const loadSquares = useCallback(async () => {
     try {
@@ -58,19 +53,6 @@ export function PlayerAdminSheet({
     } catch (e) {
       setError(friendlyError(e));
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function prize(name: "admin_award_prize" | "admin_clear_prize") {
-    setBusy(true);
-    setError(null);
-    try {
-      await rpc(name, { p_player_id: player.player_id });
-      onChanged();
-      onClose();
-    } catch (e) {
-      setError(friendlyError(e));
       setBusy(false);
     }
   }
@@ -117,46 +99,6 @@ export function PlayerAdminSheet({
         </div>
 
         {error ? <ErrorBox>{error}</ErrorBox> : null}
-
-        {player.host_pick || (canAward && !player.is_winner) ? (
-          <div className="mt-3 space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
-            {player.host_pick ? (
-              <>
-                <p className="font-semibold text-amber-950">
-                  Host&apos;s pick &middot; {ordinal(player.prize_place ?? player.award_place ?? 0)} prize
-                </p>
-                {!clearing ? (
-                  <Button variant="secondary" disabled={busy} onClick={() => setClearing(true)}>
-                    Remove prize
-                  </Button>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-amber-950">
-                      Take the prize away from {player.full_name}? The place becomes free again.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="danger" disabled={busy} onClick={() => prize("admin_clear_prize")}>
-                        {busy ? "Removing..." : "Yes, remove prize"}
-                      </Button>
-                      <Button variant="secondary" disabled={busy} onClick={() => setClearing(false)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-amber-950">
-                  A prize place is still empty. Give {player.full_name} the next free one, whatever their score.
-                </p>
-                <Button disabled={busy} onClick={() => prize("admin_award_prize")}>
-                  {busy ? "Giving..." : "Give prize"}
-                </Button>
-              </>
-            )}
-          </div>
-        ) : null}
 
         <h3 className="mt-3 text-sm font-bold uppercase text-slate-500">Confirmed squares</h3>
         {squares === null ? (

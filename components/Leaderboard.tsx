@@ -8,7 +8,6 @@ export function Leaderboard({
   showEmail = true,
   big = false,
   onManage,
-  onAward,
   mode = "correct_then_time",
 }: {
   rows: LeaderboardRow[];
@@ -16,8 +15,6 @@ export function Leaderboard({
   big?: boolean;
   /** When set, each row gets a "Manage" button. */
   onManage?: (row: LeaderboardRow) => void;
-  /** When set, non-winner rows get a "Give prize" button (only pass it while prize places are empty). */
-  onAward?: (row: LeaderboardRow) => void;
   mode?: RankingMode;
 }) {
   const showLines = mode === "lines";
@@ -28,7 +25,7 @@ export function Leaderboard({
   const pad = big ? "px-4 py-3" : "px-3 py-2";
   return (
     <div className="overflow-x-auto">
-      <table className={`w-full min-w-[40rem] border-collapse text-left ${text}`}>
+      <table className={`w-full min-w-[34rem] border-collapse text-left ${text}`}>
         <thead>
           <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
             <th className={pad}>Rank</th>
@@ -63,11 +60,7 @@ export function Leaderboard({
                 )}
               </td>
               <td className={pad}>
-                {r.host_pick ? (
-                  <span className="rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-amber-950">
-                    Host&apos;s pick &middot; {ordinal(r.prize_place ?? r.award_place ?? 0)}
-                  </span>
-                ) : r.is_winner ? (
+                {r.is_winner ? (
                   <span className="rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-amber-950">
                     {r.prize_rank ? `${ordinal(r.prize_rank)} prize` : "Winner"}
                   </span>
@@ -78,16 +71,7 @@ export function Leaderboard({
                 ) : null}
               </td>
               {onManage ? (
-                <td className={`${pad} whitespace-nowrap`}>
-                  {onAward && !r.is_winner ? (
-                    <button
-                      type="button"
-                      onClick={() => onAward(r)}
-                      className="mr-2 min-h-11 rounded-xl border border-amber-400 bg-amber-50 px-3 text-sm font-semibold text-amber-900 hover:bg-amber-100"
-                    >
-                      Give prize
-                    </button>
-                  ) : null}
+                <td className={pad}>
                   <button
                     type="button"
                     onClick={() => onManage(r)}

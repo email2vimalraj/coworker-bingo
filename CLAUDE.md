@@ -44,7 +44,6 @@ Before calling a change done: typecheck, lint, `npm test`, `npm run test:db`; pl
   - `require_full_card` limits winners to 24/24 boards.
   - A player needs at least 1 confirmed square to be eligible.
   - Ties share a rank.
-  - **Host picks (0018) are a post-layer on top of the rules, not a rule change.** After the end, `admin_award_prize` / `admin_clear_prize` set `players.award_place` for places `k+1..winners_count` (`k` = rule winners). `_leaderboard` adds `award_place`, `host_pick`, `prize_place` and sets `is_winner` for picks; `rank`/order are untouched. `lib/prizes.ts` (`applyHostPicks`) mirrors it over `rankPlayers`. Places are never renumbered; awarding takes the lowest free place.
 - **Error codes:** RPC errors are raised as plain codes (`EMAIL_TAKEN`, `COWORKER_LIMIT`, `TIME_UP`, …). Map every new code to friendly text in `lib/errors.ts`.
 - **Codes:**
   - Session codes are 6 characters. Player codes are `XXX-XXX`.

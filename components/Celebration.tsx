@@ -34,9 +34,7 @@ export function Celebration({ sessionName, rows }: { sessionName: string; rows: 
       </header>
       <div className="flex w-full flex-1 flex-col items-center justify-center">
         {total === 0 ? (
-          <p className="animate-pulse text-[clamp(2rem,7vmin,6rem)] font-extrabold text-slate-300">
-            Winners coming up&hellip;
-          </p>
+          <p className="text-[clamp(2rem,7vmin,6rem)] font-extrabold text-slate-300">No winners this time</p>
         ) : (
           <Podium winners={winners} revealed={revealed} />
         )}
@@ -48,7 +46,7 @@ export function Celebration({ sessionName, rows }: { sessionName: string; rows: 
             onClick={revealNext}
             className="min-h-11 rounded-xl bg-amber-400 px-6 text-lg font-bold text-amber-950 hover:bg-amber-300"
           >
-            {revealed === 0 ? "Reveal winners" : `Reveal ${ordinal(nextRow?.prize_place ?? total - revealed)} place`}
+            {revealed === 0 ? "Reveal winners" : `Reveal ${ordinal(nextRow?.prize_rank ?? total - revealed)} place`}
           </button>
           <button
             type="button"

@@ -94,8 +94,6 @@ export interface PollResult {
   prize_rank: number | null;
   lines: number;
   reach_seconds: number | null;
-  host_pick: boolean;
-  prize_place: number | null;
 }
 
 export interface PollResponse {
@@ -120,12 +118,6 @@ export interface LeaderboardRow {
   prize_rank: number | null;
   lines: number;
   reach_seconds: number | null;
-  /** place given by the host (migration 0018) */
-  award_place: number | null;
-  /** winner only because the host picked them */
-  host_pick: boolean;
-  /** automatic winners: position 1..k; host picks: award_place */
-  prize_place: number | null;
 }
 
 /** Row from the admin_sessions() RPC. */
