@@ -20,6 +20,8 @@ from (values
   ('0015_admin_create_account.sql',  to_regprocedure('public.admin_create(text,text)') is not null),
   ('0016_admin_db_health.sql',      to_regprocedure('public.admin_db_health()') is not null),
   ('0017_present_leaderboard_option.sql', exists (select 1 from information_schema.columns
-     where table_schema = 'public' and table_name = 'sessions' and column_name = 'present_show_leaderboard'))
+     where table_schema = 'public' and table_name = 'sessions' and column_name = 'present_show_leaderboard')),
+  ('0018_host_picked_winners.sql',  exists (select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'players' and column_name = 'award_place'))
 ) as m(file, applied)
 order by m.file;

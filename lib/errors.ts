@@ -34,6 +34,11 @@ export const ERROR_MESSAGES: Record<string, string> = {
   WEAK_PASSWORD: "The password must be 8 to 72 characters.",
   CANNOT_REMOVE_SELF: "You can't remove yourself as an admin.",
   LAST_ADMIN: "You can't remove the last admin.",
+  NOT_ENDED: "Prizes can only be given after the game has ended.",
+  ALREADY_WINNER: "That player already has a prize.",
+  NO_FREE_PLACE: "All prize places are taken. Remove a pick first to free one.",
+  INVALID_PLACE: "That prize place isn't available to pick.",
+  PLACE_TAKEN: "That prize place is already given to someone else.",
   CODE_GENERATION_FAILED: "Couldn't generate a unique code. Please try again.",
 };
 

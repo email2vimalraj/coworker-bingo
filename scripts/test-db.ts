@@ -10,6 +10,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { citext } from "@electric-sql/pglite/contrib/citext";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { rankPlayers, type RankingMode } from "../lib/ranking";
+import { applyHostPicks } from "../lib/prizes";
 
 const root = pjoin(__dirname, "..");
 const db = new PGlite({ extensions: { citext, pgcrypto } });
@@ -307,7 +308,7 @@ async function main() {
   const pended = await poll(B);
   assert.equal(pended.session.status, "ended");
   assert.ok(pended.result);
-  assert.deepEqual(Object.keys(pended.result!).sort(), ["correct", "elapsed_seconds", "is_winner", "lines", "prize_rank", "rank", "reach_seconds"]);
+  assert.deepEqual(Object.keys(pended.result!).sort(), ["correct", "elapsed_seconds", "host_pick", "is_winner", "lines", "prize_place", "prize_rank", "rank", "reach_seconds"]);
   await expectErr("SESSION_ENDED", join("Late", "late@example.com"));
   ok("effective status ended after ends_at: TIME_UP, result in poll, join blocked");
 
@@ -1186,6 +1187,134 @@ async function main() {
     });
     assert.equal((await q("select present_show_leaderboard as v from sessions where id=$1", [sid]))[0].v, true);
     ok("present_show_leaderboard: default off, admin can change it, non-admin and anon can't");
+  }
+
+
+  // Host-picked winners (0018)
+  {
+    const adm = <T,>(fn: () => Promise<T>) => as("authenticated", ADMIN, fn);
+    const hs = await adm(() => rpc("create_session", ["Picks", 600, "correct_then_time", true, 3, 5, prompts]));
+    const hid = hs.id as string;
+    const hj: Joined[] = [];
+    for (let i = 0; i < 5; i++) {
+      hj.push(await as("anon", null, () => rpc("join_session", [hs.code, `Pick${i}`, `pick${i}@example.com`]) as unknown as Promise<Joined>));
+    }
+    const hpl = (j: Joined) => as("anon", null, () => rpc("player_poll", [j.player_token]) as unknown as Promise<Poll>);
+    // award before the end -> NOT_ENDED; non-admin / anon refused
+    await adm(() => expectErr("NOT_ENDED", rpc("admin_award_prize", [hj[0].player_id, null])));
+    await as("authenticated", OTHER_USER, () => expectErr("NOT_ADMIN", rpc("admin_award_prize", [hj[0].player_id, null])));
+    await as("authenticated", OTHER_USER, () => expectErr("NOT_ADMIN", rpc("admin_clear_prize", [hj[0].player_id])));
+    await expectErr("permission denied", as("anon", null, () => rpc("admin_award_prize", [hj[0].player_id, null])));
+    await expectErr("permission denied", as("anon", null, () => rpc("admin_clear_prize", [hj[0].player_id])));
+    await adm(() => expectErr("PLAYER_NOT_FOUND", rpc("admin_award_prize", [crypto.randomUUID(), null])));
+    await adm(async () => {
+      await rpc("start_session", [hid]);
+    });
+    await adm(() => expectErr("NOT_ENDED", rpc("admin_award_prize", [hj[0].player_id, null])));
+    ok("admin_award_prize: NOT_ENDED while live, NOT_ADMIN for non-admins, anon denied, PLAYER_NOT_FOUND");
+
+    // one confirmed square, nobody at 24/24 (require_full_card): no automatic winners
+    await q("insert into claims(session_id, player_id, coworker_id, cell_index, status, resolved_at) values ($1,$2,$3,0,'confirmed',now())", [hid, hj[0].player_id, hj[1].player_id]);
+    await q("update sessions set started_at = now() - interval '700 seconds', ends_at = now() - interval '100 seconds' where id=$1", [hid]);
+    const lb0 = await adm(() => q("select * from session_leaderboard($1)", [hid]));
+    assert.ok(lb0.every((r) => !r.is_winner && !r.host_pick && r.prize_place === null && r.award_place === null));
+    // award 3 players: places 1, 2, 3 (an ineligible player with 0 squares is fine)
+    const got: number[] = [];
+    await adm(async () => {
+      for (const i of [3, 0, 4]) {
+        const r = await rpc("admin_award_prize", [hj[i].player_id, null]);
+        assert.equal(r.player_id, hj[i].player_id);
+        got.push(Number(r.place));
+      }
+      await expectErr("NO_FREE_PLACE", rpc("admin_award_prize", [hj[1].player_id, null]));
+      await expectErr("ALREADY_WINNER", rpc("admin_award_prize", [hj[3].player_id, null]));
+    });
+    assert.deepEqual(got, [1, 2, 3]);
+    ok("host picks: k=0, three awards take places 1,2,3, 4th -> NO_FREE_PLACE, repeat -> ALREADY_WINNER");
+
+    // clear frees the place, next award takes the lowest free place; others are not renumbered
+    await adm(async () => {
+      assert.equal((await rpc("admin_clear_prize", [hj[3].player_id])).cleared, true);
+      const r = await rpc("admin_award_prize", [hj[1].player_id, null]);
+      assert.equal(Number(r.place), 1);
+      await rpc("admin_clear_prize", [hj[0].player_id]);
+      await rpc("admin_clear_prize", [hj[1].player_id]);
+      await expectErr("INVALID_PLACE", rpc("admin_award_prize", [hj[1].player_id, 4]));
+      await expectErr("INVALID_PLACE", rpc("admin_award_prize", [hj[1].player_id, 0]));
+      await expectErr("PLACE_TAKEN", rpc("admin_award_prize", [hj[1].player_id, 3]));
+      assert.equal(Number((await rpc("admin_award_prize", [hj[1].player_id, 2])).place), 2);
+    });
+    const lb1 = await adm(() => q("select * from session_leaderboard($1)", [hid]));
+    const place = new Map(lb1.map((r) => [r.player_id, r]));
+    assert.equal(place.get(hj[4].player_id)!.prize_place, 3); // not renumbered
+    assert.equal(place.get(hj[1].player_id)!.prize_place, 2);
+    assert.equal(place.get(hj[1].player_id)!.host_pick, true);
+    assert.equal(place.get(hj[1].player_id)!.is_winner, true);
+    assert.equal(place.get(hj[0].player_id)!.is_winner, false);
+    assert.equal(place.get(hj[3].player_id)!.is_winner, false);
+    ok("clear frees a place, awards take the lowest free (or an explicit valid) place, picks are not renumbered");
+
+    // leaderboard parity: rules unchanged, picks layered on top (lib/prizes.ts)
+    const pl = await q("select id, extract(epoch from joined_at)*1000 as j from players where session_id=$1", [hid]);
+    const st = Number((await q("select extract(epoch from started_at)*1000 as st from sessions where id=$1", [hid]))[0].st);
+    const ranked = rankPlayers(
+      pl.map((p) => ({ id: p.id as string, correct: p.id === hj[0].player_id ? 1 : 0, submittedAt: null, joinedAt: Number(p.j) })),
+      { mode: "correct_then_time", requireFullCard: true, winnersCount: 3, startedAt: st, durationSeconds: 600 },
+    );
+    const exp = applyHostPicks(ranked, [{ id: hj[1].player_id as string, place: 2 }, { id: hj[4].player_id as string, place: 3 }]);
+    lb1.forEach((row, i) => {
+      assert.equal(row.player_id, exp[i].id, `picks parity row ${i} id`);
+      assert.equal(row.rank, exp[i].rank);
+      assert.equal(row.eligible, exp[i].eligible);
+      assert.equal(row.is_winner, exp[i].isWinner);
+      assert.equal(row.host_pick, exp[i].hostPick);
+      assert.equal(row.prize_place, exp[i].prizePlace);
+      assert.equal(row.award_place, exp[i].awardPlace);
+      assert.equal(row.prize_rank, exp[i].prizeRank);
+    });
+    ok("leaderboard: is_winner/host_pick/prize_place match lib/prizes.ts applyHostPicks over lib/ranking.ts");
+
+    // player_poll result
+    const pr1 = (await hpl(hj[1])).result!;
+    assert.deepEqual([pr1.is_winner, pr1.host_pick, pr1.prize_place], [true, true, 2]);
+    const pr0 = (await hpl(hj[0])).result!;
+    assert.deepEqual([pr0.is_winner, pr0.host_pick, pr0.prize_place], [false, false, null]);
+    ok("player_poll result reports is_winner, host_pick and prize_place");
+
+    // automatic winners keep their places and cannot be picked; picks fill k+1..winners_count only
+    await q("update sessions set require_full_card=false where id=$1", [hid]); // hj[0] (1 square) is now the only automatic winner
+    await adm(async () => {
+      await expectErr("ALREADY_WINNER", rpc("admin_award_prize", [hj[0].player_id, null]));
+      await expectErr("INVALID_PLACE", rpc("admin_award_prize", [hj[3].player_id, 1]));
+      await rpc("admin_clear_prize", [hj[4].player_id]);
+      assert.equal(Number((await rpc("admin_award_prize", [hj[3].player_id, null])).place), 3);
+    });
+    const lb2 = await adm(() => q("select * from session_leaderboard($1)", [hid]));
+    const m2 = new Map(lb2.map((r) => [r.player_id, r]));
+    assert.deepEqual([m2.get(hj[0].player_id)!.prize_place, m2.get(hj[0].player_id)!.host_pick], [1, false]);
+    assert.deepEqual([m2.get(hj[1].player_id)!.prize_place, m2.get(hj[1].player_id)!.host_pick], [2, true]);
+    assert.deepEqual([m2.get(hj[3].player_id)!.prize_place, m2.get(hj[3].player_id)!.host_pick], [3, true]);
+    ok("automatic winners keep places 1..k and are not changeable; picks only take k+1..winners_count");
+
+    // a removed player disappears with their pick; their place is free again
+    await adm(() => rpc("admin_remove_player", [hj[3].player_id]));
+    await adm(async () => {
+      assert.equal(Number((await rpc("admin_award_prize", [hj[4].player_id, null])).place), 3);
+    });
+
+    // concurrency: unique index guards the place
+    await expectErr("players_session_award_place_key", q("update players set award_place = 3 where id=$1", [hj[2].player_id]));
+
+    // token and award column grants
+    await as("authenticated", ADMIN, async () => {
+      await expectErr("permission denied", q("select player_token from players"));
+      assert.ok((await q("select id, award_place from players")).length > 0);
+    });
+    const lbJson2 = JSON.stringify(await adm(() => q("select * from session_leaderboard($1)", [hid]))) + JSON.stringify(await hpl(hj[1]));
+    for (const t of (await q("select player_token::text as t from players")).map((r) => String(r.t))) assert.ok(!lbJson2.includes(t), "token leaked");
+    ok("removed pick frees its place; unique index per session; player_token still hidden");
+    const priv = await q("select has_function_privilege('anon', 'admin_award_prize(uuid,int)'::regprocedure, 'execute') as a, has_function_privilege('anon', 'admin_clear_prize(uuid)'::regprocedure, 'execute') as c");
+    assert.deepEqual(priv[0], { a: false, c: false });
   }
 
   console.log(`\n${passed} checks passed`);

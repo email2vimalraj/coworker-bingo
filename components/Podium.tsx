@@ -6,7 +6,7 @@ import { ordinal } from "@/lib/format";
 export function sortWinners(rows: LeaderboardRow[]): LeaderboardRow[] {
   return rows
     .filter((r) => r.is_winner)
-    .sort((a, b) => (a.prize_rank ?? 999) - (b.prize_rank ?? 999) || (a.rank ?? 999) - (b.rank ?? 999));
+    .sort((a, b) => (a.prize_place ?? 999) - (b.prize_place ?? 999) || (a.rank ?? 999) - (b.rank ?? 999));
 }
 
 /** The order the host reveals in: lowest prize first, 1st place last. */
@@ -23,7 +23,7 @@ const SLOTS = [
 function Details({ row }: { row: LeaderboardRow }) {
   return (
     <p className="text-[clamp(1rem,2.6vmin,2.5rem)] font-semibold tabular-nums">
-      {row.correct}/24 &middot; {formatDuration(row.elapsed_seconds)}
+      {row.host_pick ? "Host's pick" : `${row.correct}/24 \u00b7 ${formatDuration(row.elapsed_seconds)}`}
     </p>
   );
 }
@@ -56,7 +56,7 @@ export function Podium({ winners, revealed }: { winners: LeaderboardRow[]; revea
                 className={`flex w-full items-start justify-center rounded-t-2xl pt-[1.5vmin] ${slot.height} ${shown ? slot.color : "bg-slate-800 text-slate-500"}`}
               >
                 <span className="text-[clamp(2rem,8vmin,7rem)] font-black">
-                  {shown ? ordinal(row.prize_rank ?? slot.place + 1) : "?"}
+                  {shown ? ordinal(row.prize_place ?? slot.place + 1) : "?"}
                 </span>
               </div>
             </div>
@@ -73,13 +73,19 @@ export function Podium({ winners, revealed }: { winners: LeaderboardRow[]; revea
                 className={`flex items-center gap-[2vmin] rounded-xl bg-slate-800 px-[2vmin] py-[0.8vmin] text-[clamp(1.1rem,3.2vmin,2.75rem)] transition-opacity duration-700 motion-reduce:transition-none ${shown ? "opacity-100" : "opacity-0"}`}
               >
                 <span className="w-[3em] shrink-0 font-bold tabular-nums text-amber-300">
-                  {ordinal(row.prize_rank ?? i + 4)}
+                  {ordinal(row.prize_place ?? i + 4)}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-semibold">{row.full_name}</span>
-                <span className="shrink-0 tabular-nums">{row.correct}/24</span>
-                <span className="w-[3.6em] shrink-0 text-right font-mono tabular-nums text-slate-400">
-                  {formatDuration(row.elapsed_seconds)}
-                </span>
+                {row.host_pick ? (
+                  <span className="shrink-0 text-slate-400">Host&apos;s pick</span>
+                ) : (
+                  <>
+                    <span className="shrink-0 tabular-nums">{row.correct}/24</span>
+                    <span className="w-[3.6em] shrink-0 text-right font-mono tabular-nums text-slate-400">
+                      {formatDuration(row.elapsed_seconds)}
+                    </span>
+                  </>
+                )}
               </li>
             );
           })}

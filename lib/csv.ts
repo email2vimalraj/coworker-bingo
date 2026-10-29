@@ -20,6 +20,8 @@ export function leaderboardCsv(rows: LeaderboardRow[], showLines = false): strin
     "Eligible to win",
     "Winner",
     "Prize rank",
+    "Prize place",
+    "Host pick",
   ];
   const lines = rows.map((r) =>
     [
@@ -33,6 +35,8 @@ export function leaderboardCsv(rows: LeaderboardRow[], showLines = false): strin
       r.eligible ? "yes" : "no",
       r.is_winner ? "yes" : "no",
       r.prize_rank,
+      r.prize_place,
+      r.host_pick ? "yes" : "no",
     ]
       .map(cell)
       .join(","),

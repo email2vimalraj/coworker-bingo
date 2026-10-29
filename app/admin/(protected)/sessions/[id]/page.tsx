@@ -10,6 +10,8 @@ import { joinUrl } from "@/lib/codes";
 import { describeDomains } from "@/lib/domains";
 import { downloadCsv, leaderboardCsv } from "@/lib/csv";
 import { effectiveStatus, useSessionDashboard } from "@/lib/useSessionDashboard";
+import { ordinal } from "@/lib/format";
+import { prizeSummary } from "@/lib/prizes";
 import { formatClock, useCountdown } from "@/lib/useCountdown";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { CopyButton } from "@/components/CopyButton";
@@ -103,6 +105,20 @@ export default function SessionDashboard() {
     } finally {
       await reload();
       setBusy(false);
+    }
+  }
+
+  // Host-picked winners: after the end, places the rules left empty can be filled by hand.
+  const prizes = prizeSummary(rows, session.winners_count);
+  const canAward = status === "ended" && prizes.empty > 0 && rows.length > prizes.automatic + prizes.picked;
+  async function awardPrize(row: LeaderboardRow) {
+    setActionError(null);
+    try {
+      await rpc("admin_award_prize", { p_player_id: row.player_id });
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      await reload();
     }
   }
 
@@ -302,12 +318,29 @@ export default function SessionDashboard() {
             Export CSV
           </Button>
         </div>
-        <Leaderboard rows={rows} mode={session.ranking_mode} onManage={setManaged} />
+        {status === "ended" && prizes.empty > 0 ? (
+          <div className="mx-4 mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+            <p className="font-semibold">
+              {prizes.empty} of {session.winners_count} prize place{session.winners_count === 1 ? " is" : "s are"} empty
+              {prizes.automatic > 0
+                ? ` \u2014 the rules found ${prizes.automatic} winner${prizes.automatic === 1 ? "" : "s"}.`
+                : " \u2014 the rules found no winners."}{" "}
+              You can pick the rest.
+            </p>
+            <p>
+              {canAward
+                ? `"Give prize" awards the next free place (${prizes.nextPlace ? ordinal(prizes.nextPlace) : "-"}). Anyone can be picked, whatever their score.`
+                : "There are no other players to pick."}
+            </p>
+          </div>
+        ) : null}
+        <Leaderboard rows={rows} mode={session.ranking_mode} onManage={setManaged} onAward={canAward ? awardPrize : undefined} />
         {managed ? (
           <PlayerAdminSheet
             player={managed}
             onClose={() => setManaged(null)}
             onChanged={() => void reload()}
+            canAward={canAward}
           />
         ) : null}
       </Card>
