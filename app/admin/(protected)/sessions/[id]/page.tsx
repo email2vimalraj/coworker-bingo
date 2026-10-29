@@ -9,6 +9,7 @@ import { getAppOrigin } from "@/lib/appUrl";
 import { joinUrl } from "@/lib/codes";
 import { describeDomains } from "@/lib/domains";
 import { downloadCsv, leaderboardCsv } from "@/lib/csv";
+import { isRevealed } from "@/lib/results";
 import { effectiveStatus, useSessionDashboard } from "@/lib/useSessionDashboard";
 import { formatClock, useCountdown } from "@/lib/useCountdown";
 import { ActivityFeed } from "@/components/ActivityFeed";
@@ -38,6 +39,7 @@ export default function SessionDashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [confirmReveal, setConfirmReveal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [managed, setManaged] = useState<LeaderboardRow | null>(null);
   const remaining = useCountdown(session?.ends_at ?? null, offsetMs, session?.paused_at ?? null);
@@ -71,7 +73,7 @@ export default function SessionDashboard() {
   const paused = status === "live" && !!session.paused_at;
 
   async function action(
-    name: "start_session" | "end_session" | "pause_session" | "resume_session" | "extend_session",
+    name: "start_session" | "end_session" | "pause_session" | "resume_session" | "extend_session" | "admin_reveal_results",
     extra: Record<string, unknown> = {},
   ) {
     setBusy(true);
@@ -79,6 +81,7 @@ export default function SessionDashboard() {
     try {
       await rpc(name, { p_session_id: id, ...extra });
       setConfirmEnd(false);
+      setConfirmReveal(false);
     } catch (e) {
       setActionError(friendlyError(e));
     } finally {
@@ -200,6 +203,21 @@ export default function SessionDashboard() {
                 Finalize
               </Button>
             ) : null}
+            {status === "ended" && !isRevealed(session) && !confirmReveal ? (
+              <Button className="min-h-11" disabled={busy} onClick={() => setConfirmReveal(true)}>
+                Reveal winners
+              </Button>
+            ) : null}
+            {status === "ended" && !isRevealed(session) && confirmReveal ? (
+              <>
+                <Button className="min-h-11" disabled={busy} onClick={() => action("admin_reveal_results")}>
+                  Yes, reveal now
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirmReveal(false)}>
+                  Not yet
+                </Button>
+              </>
+            ) : null}
             {status === "lobby" && session.status === "lobby" ? (
               <Link
                 href={`/admin/sessions/${id}/edit`}
@@ -233,6 +251,15 @@ export default function SessionDashboard() {
               onDeleted={() => router.replace("/admin")}
             />
           ) : null}
+          {status === "ended" && !isRevealed(session) ? (
+            <p className="text-sm text-slate-600">Shows the winners on the projector and on players&apos; phones.</p>
+          ) : null}
+          {status === "ended" && session.results_revealed_at ? (
+            <p className="text-sm font-semibold text-emerald-700">
+              Winners revealed at{" "}
+              {new Date(session.results_revealed_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          ) : null}
           <p className="text-sm text-slate-600">
             {session.ranking_mode === "lines"
               ? `First to ${session.lines_to_win} bingo line${session.lines_to_win === 1 ? "" : "s"}`
@@ -263,7 +290,8 @@ export default function SessionDashboard() {
               <span className="block text-slate-500">
                 {showOnPresent
                   ? "The projector shows names and scores during the game."
-                  : "Hidden: the projector shows only totals until the winners are revealed at the end."}
+                  : "Hidden: the projector shows only totals until you reveal the winners at the end."}
+                {" "}Turning this on also reveals the results as soon as the game ends.
               </span>
             </span>
           </label>

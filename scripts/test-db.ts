@@ -163,7 +163,7 @@ async function main() {
   assert.deepEqual(Object.keys(live).sort(), ["board", "incoming", "me", "result", "server_now", "session"]);
   assert.deepEqual(
     Object.keys(live.session).sort(),
-    ["allow_username_claims", "code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "paused", "paused_at", "ranking_mode", "require_full_card", "started_at", "status", "winners_count"],
+    ["allow_username_claims", "code", "duration_seconds", "ends_at", "lines_to_win", "max_squares_per_coworker", "name", "paused", "paused_at", "ranking_mode", "require_full_card", "results_revealed", "started_at", "status", "winners_count"],
   );
   assert.deepEqual(Object.keys(live.me).sort(), ["correct", "full_name", "id", "lines", "player_code", "submitted_at", "username"]);
   assert.equal(live.me.username, "alice");
@@ -306,8 +306,18 @@ async function main() {
   await expectErr("TIME_UP", as("anon", null, () => rpc("submit_board", [B.player_token])));
   const pended = await poll(B);
   assert.equal(pended.session.status, "ended");
-  assert.ok(pended.result);
-  assert.deepEqual(Object.keys(pended.result!).sort(), ["correct", "elapsed_seconds", "is_winner", "lines", "prize_rank", "rank", "reach_seconds"]);
+  // 0018: ended but not revealed -> nothing about winning reaches the phone
+  assert.equal(pended.result, null);
+  assert.equal(pended.session.results_revealed, false);
+  assert.ok(!/"(rank|is_winner|prize_rank)"/.test(JSON.stringify(pended)), "no rank/winner/prize before the reveal");
+  await expectErr("permission denied", as("anon", null, () => rpc("admin_reveal_results", [sid])));
+  const revealedAt = await as("authenticated", ADMIN, () => rpc("admin_reveal_results", [sid]) as unknown as Promise<string>);
+  assert.ok(revealedAt);
+  const pendedRevealed = await poll(B);
+  assert.equal(pendedRevealed.session.results_revealed, true);
+  assert.ok(pendedRevealed.result);
+  assert.deepEqual(Object.keys(pendedRevealed.result!).sort(), ["correct", "elapsed_seconds", "is_winner", "lines", "prize_rank", "rank", "reach_seconds"]);
+  await q("update sessions set results_revealed_at = null where id=$1", [sid]);
   await expectErr("SESSION_ENDED", join("Late", "late@example.com"));
   ok("effective status ended after ends_at: TIME_UP, result in poll, join blocked");
 
@@ -937,6 +947,7 @@ async function main() {
     const lp3 = await as("anon", null, () => rpc("player_poll", [lj[5].player_token]) as unknown as Promise<Poll>);
     assert.equal(lp3.me.lines, 0);
     await q("update sessions set ends_at = now() - interval '1 second' where id=$1", [ls.id]);
+    await q("update sessions set results_revealed_at = now() where id=$1", [ls.id]);
     const lend = await as("anon", null, () => rpc("player_poll", [lj[7].player_token]) as unknown as Promise<Poll>);
     assert.equal(lend.result!.lines, 2);
     assert.equal(Math.round(Number(lend.result!.reach_seconds)), 50);
@@ -1186,6 +1197,68 @@ async function main() {
     });
     assert.equal((await q("select present_show_leaderboard as v from sessions where id=$1", [sid]))[0].v, true);
     ok("present_show_leaderboard: default off, admin can change it, non-admin and anon can't");
+  }
+
+  // results reveal (0018)
+  {
+    const mkPlayer = (c: string, n: string) =>
+      as("anon", null, () => rpc("join_session", [c, n, `${n.toLowerCase().replace(/\W/g, "")}@reveal.test`]) as unknown as Promise<Joined>);
+    const pollOf = (j: Joined) => as("anon", null, () => rpc("player_poll", [j.player_token]) as unknown as Promise<Poll>);
+    const admin = <T,>(fn: () => Promise<T>) => as("authenticated", ADMIN, fn);
+    const rs = await admin(() => rpc("create_session", ["Reveal", 600, "correct_then_time", false, 1, 5, prompts]));
+    const r1 = await mkPlayer(rs.code as string, "Rev One");
+    const r2 = await mkPlayer(rs.code as string, "Rev Two");
+    // live: reveal refused, flag false
+    await admin(async () => {
+      await expectErr("NOT_ENDED", rpc("admin_reveal_results", [rs.id]));
+      await rpc("start_session", [rs.id]);
+      await expectErr("NOT_ENDED", rpc("admin_reveal_results", [rs.id]));
+      await expectErr("SESSION_NOT_FOUND", rpc("admin_reveal_results", [crypto.randomUUID()]));
+    });
+    await expectErr("NOT_ADMIN", as("authenticated", OTHER_USER, () => rpc("admin_reveal_results", [rs.id])));
+    await expectErr("permission denied", as("anon", null, () => rpc("admin_reveal_results", [rs.id])));
+    assert.equal((await pollOf(r1)).session.results_revealed, false);
+    // one confirmed square for r1
+    const cl = await as("anon", null, () => rpc("create_claim", [r1.player_token, 0, r2.player_code]) as unknown as Promise<{ claim_id: string }>);
+    await as("anon", null, () => rpc("respond_claim", [r2.player_token, cl.claim_id, true]));
+    // end with the option off: hidden
+    await admin(() => rpc("end_session", [rs.id]));
+    const hid = await pollOf(r1);
+    assert.equal(hid.session.status, "ended");
+    assert.equal(hid.session.results_revealed, false);
+    assert.equal(hid.result, null);
+    assert.equal(hid.me.correct, 1);
+    assert.ok(hid.me.submitted_at === null || typeof hid.me.submitted_at === "string");
+    assert.ok(!/"(rank|is_winner|prize_rank)"/.test(JSON.stringify(hid)), "no rank/winner/prize before the reveal");
+    // reveal: idempotent, same timestamp
+    const t1 = await admin(() => rpc("admin_reveal_results", [rs.id]) as unknown as Promise<string>);
+    const t2 = await admin(() => rpc("admin_reveal_results", [rs.id]) as unknown as Promise<string>);
+    assert.ok(t1);
+    assert.equal(new Date(t1).getTime(), new Date(t2).getTime());
+    const shown = await pollOf(r1);
+    assert.equal(shown.session.results_revealed, true);
+    assert.deepEqual(Object.keys(shown.result!).sort(), ["correct", "elapsed_seconds", "is_winner", "lines", "prize_rank", "rank", "reach_seconds"]);
+    assert.equal(shown.result!.rank, 1);
+    assert.equal(shown.result!.is_winner, true);
+    assert.ok(!JSON.stringify(shown).includes(r1.player_token), "token never returned by poll");
+    // option on: revealed as soon as the game ends, no reveal press needed
+    const os = await admin(() => rpc("create_session", ["Reveal on", 600, "correct_then_time", false, 1, 5, prompts]));
+    const o1 = await mkPlayer(os.code as string, "On One");
+    await admin(async () => {
+      await rpc("start_session", [os.id]);
+      await q("update sessions set present_show_leaderboard = true where id=$1", [os.id]);
+    });
+    assert.equal((await pollOf(o1)).session.results_revealed, false); // live: never "revealed"
+    await admin(() => rpc("end_session", [os.id]));
+    const on = await pollOf(o1);
+    assert.equal(on.session.results_revealed, true);
+    assert.ok(on.result);
+    ok("results reveal: hidden until the host reveals or Top 10 is on, admin_reveal_results guards + idempotent");
+    // backfill statement from 0018: ended sessions get a timestamp, live ones stay null
+    await q("update sessions set results_revealed_at = null where id in ($1, $2)", [rs.id, sid]);
+    await q("update sessions set results_revealed_at = coalesce(ended_at, ends_at, now()) where effective_status(sessions) = 'ended'");
+    assert.ok((await q("select results_revealed_at from sessions where id=$1", [rs.id]))[0].results_revealed_at);
+    ok("0018 backfill: ended sessions are marked revealed");
   }
 
   console.log(`\n${passed} checks passed`);

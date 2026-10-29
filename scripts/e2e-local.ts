@@ -46,7 +46,7 @@ async function rpc<T>(c: SupabaseClient, name: string, args: Record<string, unkn
 
 type Cell = { cell_index: number; is_free: boolean; status: string | null; claim_id: string | null; last_outcome: string | null };
 type Poll = {
-  session: { status: string };
+  session: { status: string; results_revealed?: boolean };
   me: { player_code: string; username: string; correct: number; submitted_at: string | null };
   board: Cell[];
   incoming: { claim_id: string; from_name: string; prompt: string }[];
@@ -80,11 +80,15 @@ async function main() {
   // Realtime: count events the admin dashboard would receive.
   const events = { players: 0, claims: 0, sessions: 0 };
   let subscribed = false;
+  let revealedEvent = false;
   const channel = admin
     .channel(`e2e-${sessionId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "players", filter: `session_id=eq.${sessionId}` }, () => events.players++)
     .on("postgres_changes", { event: "*", schema: "public", table: "claims", filter: `session_id=eq.${sessionId}` }, () => events.claims++)
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, () => events.sessions++)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `id=eq.${sessionId}` }, (p) => {
+      events.sessions++;
+      if ((p.new as { results_revealed_at?: string | null }).results_revealed_at) revealedEvent = true;
+    })
     .subscribe((s) => {
       if (s === "SUBSCRIBED") subscribed = true;
     });
@@ -115,6 +119,8 @@ async function main() {
 
   const started = await rpc(admin, "start_session", { p_session_id: sessionId });
   check("start_session", !started.error, started.error);
+  const early2 = await rpc(admin, "admin_reveal_results", { p_session_id: sessionId });
+  check("reveal while live -> NOT_ENDED", early2.error?.includes("NOT_ENDED") ?? false, early2.error);
 
   // A scans B using the full QR URL, lowercased, without the dash.
   const qr = `http://localhost:3000/play/${code}/scan?c=${b.data.player_code.replace("-", "").toLowerCase()}`;
@@ -200,7 +206,14 @@ async function main() {
   const ended = await rpc(admin, "end_session", { p_session_id: sessionId });
   check("end_session", !ended.error, ended.error);
   const final = await poll(b.data.player_token);
-  check("ended poll returns result (rank 1, winner)", final.session.status === "ended" && final.result?.rank === 1 && final.result.is_winner, final.result);
+  check("ended, not revealed: poll hides the result", final.session.status === "ended" && final.session.results_revealed === false && final.result === null && !/"(rank|is_winner|prize_rank)"/.test(JSON.stringify(final)), final);
+  const anonReveal = await rpc(anon, "admin_reveal_results", { p_session_id: sessionId });
+  check("anon can't reveal results", !!anonReveal.error, anonReveal.error);
+  const rev1 = await rpc<string>(admin, "admin_reveal_results", { p_session_id: sessionId });
+  const rev2 = await rpc<string>(admin, "admin_reveal_results", { p_session_id: sessionId });
+  check("admin_reveal_results is idempotent", !rev1.error && !!rev1.data && new Date(rev1.data).getTime() === new Date(rev2.data).getTime(), [rev1, rev2]);
+  const revealed = await poll(b.data.player_token);
+  check("after reveal: poll returns result (rank 1, winner)", revealed.session.results_revealed === true && revealed.result?.rank === 1 && revealed.result.is_winner, revealed.result);
 
   // ---- Item 4: admin player controls ----
   {
@@ -223,6 +236,7 @@ async function main() {
   console.log(`  realtime events seen: players=${events.players} claims=${events.claims} sessions=${events.sessions}`);
   check("realtime: claims events delivered", events.claims > 0);
   check("realtime: sessions events delivered", events.sessions > 0);
+  check("realtime: sessions UPDATE carries results_revealed_at", revealedEvent);
   check("realtime: players events delivered", events.players > 0);
   await admin.removeChannel(channel);
 

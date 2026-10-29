@@ -5,6 +5,7 @@ import { getAppOrigin } from "@/lib/appUrl";
 import { joinUrl } from "@/lib/codes";
 import { effectiveStatus, useSessionDashboard } from "@/lib/useSessionDashboard";
 import { formatClock, formatDuration, useCountdown } from "@/lib/useCountdown";
+import { isRevealed } from "@/lib/results";
 import { Celebration } from "@/components/Celebration";
 import { QRCode } from "@/components/QRCode";
 import { Spinner } from "@/components/ui";
@@ -30,7 +31,20 @@ export default function PresentPage() {
 
   if (loading || !session) return <Spinner />;
   const status = effectiveStatus(session, Date.now() + offsetMs);
-  if (status === "ended") return <Celebration sessionName={session.name} rows={rows} />;
+  if (status === "ended" && isRevealed(session)) return <Celebration sessionName={session.name} rows={rows} />;
+  if (status === "ended") {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-[4vmin] bg-slate-950 p-[3vmin] text-center text-white">
+        <p className="truncate text-[clamp(1.25rem,3.5vmin,3rem)] font-bold text-slate-300">{session.name}</p>
+        <h1 className="text-[clamp(3rem,16vmin,14rem)] font-black leading-none text-amber-300">Time&apos;s up!</h1>
+        <div className="grid w-full max-w-[120vmin] grid-cols-2 gap-[3vmin]">
+          <PresentStat label="Players" value={rows.length} />
+          <PresentStat label="Squares confirmed" value={rows.reduce((n, r) => n + r.correct, 0)} />
+        </div>
+        <p className="text-[clamp(1.5rem,5vmin,4.5rem)] font-bold">Winners coming up&hellip;</p>
+      </main>
+    );
+  }
   const clock =
     status === "live" && remaining !== null
       ? formatClock(remaining)

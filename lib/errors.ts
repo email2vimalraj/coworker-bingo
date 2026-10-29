@@ -4,6 +4,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   SESSION_NOT_FOUND: "We couldn't find that session. Check the code and try again.",
   SESSION_ENDED: "This session has already ended.",
   NOT_LIVE: "The game hasn't started yet. Wait for the host to start it.",
+  NOT_ENDED: "The game hasn't ended yet. You can reveal the winners once time is up.",
   TIME_UP: "Time's up! The game is over.",
   ALREADY_SUBMITTED: "You've already submitted your board.",
   SELF_SCAN: "That's your own code. Find a coworker to scan instead!",

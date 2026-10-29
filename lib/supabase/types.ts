@@ -22,6 +22,8 @@ export interface SessionRow {
   allow_username_claims: boolean;
   /** Show the live Top 10 on the Present screen during the game (0017). */
   present_show_leaderboard?: boolean;
+  /** When the host revealed the winners (0018). Null until then. */
+  results_revealed_at?: string | null;
   paused_at: string | null;
   created_at: string;
 }
@@ -54,6 +56,8 @@ export interface PollSession {
   allow_username_claims: boolean;
   paused: boolean;
   paused_at: string | null;
+  /** Ended and the host has revealed the results (or the Top 10 option is on). While false, `result` is null. */
+  results_revealed: boolean;
 }
 
 export interface PollMe {
@@ -102,6 +106,7 @@ export interface PollResponse {
   me: PollMe;
   board: BoardCell[];
   incoming: IncomingClaim[];
+  /** Null while live, and after the end until the results are revealed. */
   result: PollResult | null;
 }
 

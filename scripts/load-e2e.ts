@@ -138,12 +138,14 @@ const EXPECTED = new Set([
   "COWORKER_LIMIT", "CELL_TAKEN", "PAUSED", "TIME_UP", "CLAIM_NOT_PENDING", "CLAIM_NOT_FOUND", "ALREADY_SUBMITTED",
   "SESSION_ENDED", "NOT_LIVE", "SELF_SCAN", "COWORKER_NOT_FOUND", "USERNAME_AMBIGUOUS",
 ]);
-const ADMIN_LABELS = new Set(["create_session", "start_session", "pause_session", "resume_session", "end_session", "server_now"]);
+const ADMIN_LABELS = new Set(["create_session", "start_session", "pause_session", "resume_session", "end_session", "admin_reveal_results", "server_now"]);
 const MAIN_LABELS = [
-  "join_session", "player_poll[lobby]", "player_poll[live]", "player_poll[paused]", "player_poll[ended]",
+  "join_session", "player_poll[lobby]", "player_poll[live]", "player_poll[paused]", "player_poll[ended]", "player_poll[revealed]",
   "create_claim", "respond_claim", "submit_board",
 ];
-const P95_CHECKED = ["join_session", "player_poll[live]", "create_claim", "respond_claim", "player_poll[ended]"];
+// player_poll[ended] = after the end, before "Reveal winners" (cheap: no leaderboard);
+// player_poll[revealed] = after the reveal, when every phone fetches the results (the post-end herd).
+const P95_CHECKED = ["join_session", "player_poll[live]", "create_claim", "respond_claim", "player_poll[ended]", "player_poll[revealed]"];
 
 class Stat {
   lat: number[] = [];
@@ -337,7 +339,7 @@ async function runBot(i: number, joinAtMs: number) {
   while (!botsStop) {
     const p = await call<PollResponse>(
       botSb, "player_poll", { p_token: b.token },
-      (d) => `player_poll[${d.session.status === "live" && d.session.paused ? "paused" : d.session.status}]`, b.i,
+      (d) => `player_poll[${d.session.status === "live" && d.session.paused ? "paused" : d.session.status === "ended" && d.session.results_revealed ? "revealed" : d.session.status}]`, b.i,
       () => `player_poll[${b.state}]`,
     );
     let wait = 3000;
@@ -564,7 +566,7 @@ function verdict(): { pass: boolean; checks: Check[] } {
   for (const l of P95_CHECKED) {
     const s = cumStats.get(l);
     if (!s || s.n === 0) {
-      const na = l === "player_poll[ended]" && CFG.afterEndS === 0;
+      const na = (l === "player_poll[ended]" || l === "player_poll[revealed]") && CFG.afterEndS === 0;
       checks.push({ name: `p95 ${l}`, ok: na, na, value: "no calls", threshold: `< ${TH.p95Ms} ms` });
       continue;
     }
@@ -685,6 +687,7 @@ function buildHtml(summary: Record<string, unknown>, v: ReturnType<typeof verdic
       { name: "poll live", color: 2, data: rows.map((r) => r.labels["player_poll[live]"].p95) },
       { name: "poll paused", color: 8, data: rows.map((r) => r.labels["player_poll[paused]"].p95) },
       { name: "poll ended", color: 3, data: rows.map((r) => r.labels["player_poll[ended]"].p95) },
+      { name: "poll revealed", color: 9, data: rows.map((r) => r.labels["player_poll[revealed]"].p95) },
       { name: "create_claim", color: 4, data: rows.map((r) => r.labels["create_claim"].p95) },
       { name: "respond_claim", color: 5, data: rows.map((r) => r.labels["respond_claim"].p95) },
       { name: "submit_board", color: 6, data: rows.map((r) => r.labels["submit_board"].p95) },
@@ -709,9 +712,9 @@ function buildHtml(summary: Record<string, unknown>, v: ReturnType<typeof verdic
 <title>Load test ${esc(RUN_ID)}</title>
 <style>
 :root{--bg:#f7f8fa;--card:#fff;--fg:#14181f;--muted:#5b6575;--grid:#e3e7ed;--border:#d7dce4;--good:#0b7a3b;--bad:#b42318;--goodbg:#e6f4ec;--badbg:#fdecea;
---c1:#2563eb;--c2:#d97706;--c3:#059669;--c4:#9333ea;--c5:#dc2626;--c6:#0891b2;--c7:#64748b;--c8:#be185d}
+--c1:#2563eb;--c2:#d97706;--c3:#059669;--c4:#9333ea;--c5:#dc2626;--c6:#0891b2;--c7:#64748b;--c8:#be185d;--c9:#4d7c0f}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--fg:#e8ebf0;--muted:#98a2b3;--grid:#262d38;--border:#2c3440;--good:#4ade80;--bad:#f87171;--goodbg:#10291a;--badbg:#321514;
---c1:#60a5fa;--c2:#fbbf24;--c3:#34d399;--c4:#c084fc;--c5:#f87171;--c6:#22d3ee;--c7:#94a3b8;--c8:#f472b6}}
+--c1:#60a5fa;--c2:#fbbf24;--c3:#34d399;--c4:#c084fc;--c5:#f87171;--c6:#22d3ee;--c7:#94a3b8;--c8:#f472b6;--c9:#a3e635}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 main{max-width:980px;margin:0 auto;padding:16px}
 h1{font-size:1.4rem;margin:.2em 0}h2{font-size:1.1rem;margin:1.6em 0 .5em}
@@ -731,10 +734,10 @@ svg{width:100%;height:auto;display:block}
 .mlabel{fill:var(--muted);font-size:10px}
 .line{fill:none;stroke-width:2;stroke-linejoin:round}.dot{stroke:none}
 .c1{stroke:var(--c1);fill:var(--c1)}.c2{stroke:var(--c2);fill:var(--c2)}.c3{stroke:var(--c3);fill:var(--c3)}.c4{stroke:var(--c4);fill:var(--c4)}
-.c5{stroke:var(--c5);fill:var(--c5)}.c6{stroke:var(--c6);fill:var(--c6)}.c7{stroke:var(--c7);fill:var(--c7)}.c8{stroke:var(--c8);fill:var(--c8)}
+.c5{stroke:var(--c5);fill:var(--c5)}.c6{stroke:var(--c6);fill:var(--c6)}.c7{stroke:var(--c7);fill:var(--c7)}.c8{stroke:var(--c8);fill:var(--c8)}.c9{stroke:var(--c9);fill:var(--c9)}
 .line.c1,.line.c2,.line.c3,.line.c4,.line.c5,.line.c6,.line.c7,.line.c8{fill:none}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.8rem;color:var(--muted);margin-top:4px}.sw{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle;fill:none}
-.sw.c1{background:var(--c1)}.sw.c2{background:var(--c2)}.sw.c3{background:var(--c3)}.sw.c4{background:var(--c4)}.sw.c5{background:var(--c5)}.sw.c6{background:var(--c6)}.sw.c7{background:var(--c7)}.sw.c8{background:var(--c8)}
+.sw.c1{background:var(--c1)}.sw.c2{background:var(--c2)}.sw.c3{background:var(--c3)}.sw.c4{background:var(--c4)}.sw.c5{background:var(--c5)}.sw.c6{background:var(--c6)}.sw.c7{background:var(--c7)}.sw.c8{background:var(--c8)}.sw.c9{background:var(--c9)}
 </style></head><body><main>
 <h1>Load test report</h1>
 <p class="sub">Run ${esc(RUN_ID)} on ${esc(HOST)}, session ${esc(sessionCode || "-")}, ${CFG.players} players, ${CFG.minutes} min live. Started ${esc(new Date(T0).toISOString())}.</p>
@@ -960,7 +963,15 @@ async function run() {
     await call(admin, "end_session", { p_session_id: sessionId }, "end_session");
     setPhase("ended", "end");
     console.log(`Game ended. Polling results for ${CFG.afterEndS}s...`);
-    await sleep(CFG.afterEndS * 1000);
+    // Like the host: wait a moment on the "Time's up" screen, then press "Reveal winners", so the
+    // test covers the moment every phone fetches its result at once.
+    const revealAfterS = Math.min(20, CFG.afterEndS / 3);
+    await sleep(revealAfterS * 1000);
+    if (CFG.afterEndS > 0 && !aborted) {
+      await call(admin, "admin_reveal_results", { p_session_id: sessionId }, "admin_reveal_results");
+      markers.push({ t: elapsedS(), label: "reveal" });
+    }
+    await sleep(Math.max(0, CFG.afterEndS - revealAfterS) * 1000);
     await finishBots(lives);
   } finally {
     clearInterval(timer);

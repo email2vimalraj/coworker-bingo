@@ -46,7 +46,7 @@ export default function PlayPage() {
     session.paused ? session.paused_at : null,
   );
 
-  const won = session.status === "ended" && !!result?.is_winner;
+  const won = session.status === "ended" && session.results_revealed && !!result?.is_winner;
   const confettied = useRef(false);
   useEffect(() => {
     if (won && !confettied.current) {
@@ -143,9 +143,18 @@ export default function PlayPage() {
         <header className="relative pt-4 text-center">
           <HelpButton className="absolute right-0 top-0" />
           <p className="text-sm font-semibold uppercase tracking-wide text-accent">{session.name}</p>
-          <h1 className="mt-1 text-3xl font-extrabold">Game over</h1>
+          <h1 className="mt-1 text-3xl font-extrabold">{session.results_revealed ? "Game over" : "Time's up!"}</h1>
         </header>
-        {result?.is_winner ? (
+        {!session.results_revealed ? (
+          <Card className="text-center">
+            <p className="text-xs font-semibold uppercase text-slate-500">{isLines ? "Your lines" : "Your score"}</p>
+            <p className="text-4xl font-extrabold tabular-nums">
+              {isLines ? `${me.lines}/${session.lines_to_win}` : `${me.correct}/24 squares`}
+            </p>
+            <p className="mt-3 font-semibold">Winners will be revealed on the big screen. Stay tuned!</p>
+          </Card>
+        ) : null}
+        {session.results_revealed && result?.is_winner ? (
           <div className="rounded-2xl bg-amber-400 p-4 text-center text-amber-950 shadow">
             <p className="text-3xl font-black">
               {result.prize_rank ? `You won ${ordinal(result.prize_rank)} prize!` : "You won!"}
@@ -153,6 +162,7 @@ export default function PlayPage() {
             <p className="text-base font-semibold">Congratulations!</p>
           </div>
         ) : null}
+        {session.results_revealed ? (
         <Card>
           <dl className="grid grid-cols-3 gap-2 text-center">
             <div>
@@ -183,6 +193,7 @@ export default function PlayPage() {
             </p>
           ) : null}
         </Card>
+        ) : null}
         <BingoBoard
           board={board}
           selected={selected}
