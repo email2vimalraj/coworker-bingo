@@ -20,6 +20,8 @@ export interface SessionRow {
   allowed_email_domains: string[];
   lines_to_win: number;
   allow_username_claims: boolean;
+  /** Show the live Top 10 on the Present screen during the game (0017). */
+  present_show_leaderboard?: boolean;
   paused_at: string | null;
   created_at: string;
 }

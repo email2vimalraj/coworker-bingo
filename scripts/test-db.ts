@@ -1172,6 +1172,22 @@ async function main() {
     ok("admin_db_health: admin gets numeric aggregates, no query text or user info");
   }
 
+  // present_show_leaderboard (0017): off by default; admins can flip it any time, others can't
+  {
+    const sid = (await q("select id from sessions order by created_at limit 1"))[0].id as string;
+    assert.equal((await q("select present_show_leaderboard as v from sessions where id=$1", [sid]))[0].v, false);
+    await as("authenticated", OTHER_USER, async () => {
+      await q("update sessions set present_show_leaderboard = true where id=$1", [sid]); // RLS: 0 rows
+    });
+    assert.equal((await q("select present_show_leaderboard as v from sessions where id=$1", [sid]))[0].v, false);
+    await expectErr("permission denied", as("anon", null, () => q("update sessions set present_show_leaderboard = true")));
+    await as("authenticated", ADMIN, async () => {
+      await q("update sessions set present_show_leaderboard = true where id=$1", [sid]);
+    });
+    assert.equal((await q("select present_show_leaderboard as v from sessions where id=$1", [sid]))[0].v, true);
+    ok("present_show_leaderboard: default off, admin can change it, non-admin and anon can't");
+  }
+
   console.log(`\n${passed} checks passed`);
 }
 

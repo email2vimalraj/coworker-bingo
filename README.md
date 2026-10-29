@@ -11,7 +11,7 @@ Players need no login: joining returns a secret `player_token` kept in localStor
 ### 1. Supabase
 
 1. Create a free project at https://supabase.com (note the database password and region).
-2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0016_admin_db_health.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
+2. SQL editor: run every file in `supabase/migrations/` in order (`0001_init.sql` … `0017_present_leaderboard_option.sql`), then optionally `supabase/seed.sql` (a demo session with code `DEMO23`). Each file runs as one transaction, so a failed run changes nothing. The files aren't idempotent: re-running one that already ran fails with errors like `type "session_status" already exists`. **Not sure what has run?** Run `supabase/check-migrations.sql`. It lists each file as applied or not; run only the missing ones, in order.
 3. Authentication > Providers: make sure **Email** is enabled. Sign-ups can stay turned off ("Allow new users to sign up" under Authentication > Sign In / Providers): the app never uses them, and email confirmation is not needed.
 4. Authentication > Users > Add user: create the admin (email + password, tick "Auto confirm user"). Then in the SQL editor:
 
@@ -104,7 +104,7 @@ npm run load:e2e -- --url https://PROJECT.supabase.co --key sb_publishable_... \
 - [ ] Vercel Hobby is for **non-commercial use** only. Confirm that an internal company event is acceptable, or use a paid plan.
 - [ ] Verify `NEXT_PUBLIC_APP_URL`, Supabase Site URL / Redirect URLs, and that the join QR on the Present screen opens the right page on a phone (cellular and venue Wi-Fi).
 - [ ] Do a 2-phone dress rehearsal on the production URL, then delete the rehearsal session.
-- [ ] Project the **Present** page (`/admin/sessions/ID/present`), full-screen; keep one admin tab open on the dashboard.
+- [ ] Project the **Present** page (`/admin/sessions/ID/present`), full-screen; keep one admin tab open on the dashboard. The live Top 10 on the projector is off by default (totals only, so the winners stay a surprise); turn on "Show live Top 10 on the Present screen" on the dashboard if you want it.
 - [ ] After the event: export the CSV, then delete the session to remove players' names and emails.
 
 ## Known limitations

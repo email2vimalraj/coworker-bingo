@@ -69,33 +69,56 @@ export default function PresentPage() {
           >
             {clock}
           </p>
-          <div className="min-h-0 flex-1 rounded-3xl bg-slate-900 p-[2vmin]">
-            <h2 className="mb-[1vmin] text-[clamp(1.25rem,3.5vmin,3rem)] font-bold">
-              Top 10 <span className="text-slate-400">&middot; {rows.length} joined</span>
-            </h2>
-            <ol className="space-y-[0.6vmin]">
-              {rows.slice(0, 10).map((r, i) => (
-                <li
-                  key={r.player_id}
-                  className={`flex items-center gap-[2vmin] rounded-xl px-[1.5vmin] py-[0.6vmin] text-[clamp(1.1rem,3.2vmin,2.75rem)] ${r.is_winner ? "bg-amber-400/20 font-bold text-amber-200" : ""}`}
-                >
-                  <span className="w-[2.2em] shrink-0 tabular-nums text-slate-400">{r.rank ?? i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate">{r.full_name}</span>
-                  <span className="shrink-0 tabular-nums">
-                    {session.ranking_mode === "lines"
-                      ? `${r.lines} ${r.lines === 1 ? "line" : "lines"}`
-                      : `${r.correct}/24`}
-                  </span>
-                  <span className="w-[3.6em] shrink-0 text-right font-mono tabular-nums text-slate-400">
-                    {formatDuration(r.reach_seconds ?? r.elapsed_seconds)}
-                  </span>
-                </li>
-              ))}
-              {rows.length === 0 ? <li className="text-slate-400">Waiting for players to join...</li> : null}
-            </ol>
-          </div>
+          {session.present_show_leaderboard === true ? (
+            <div className="min-h-0 flex-1 rounded-3xl bg-slate-900 p-[2vmin]">
+              <h2 className="mb-[1vmin] text-[clamp(1.25rem,3.5vmin,3rem)] font-bold">
+                Top 10 <span className="text-slate-400">&middot; {rows.length} joined</span>
+              </h2>
+              <ol className="space-y-[0.6vmin]">
+                {rows.slice(0, 10).map((r, i) => (
+                  <li
+                    key={r.player_id}
+                    className={`flex items-center gap-[2vmin] rounded-xl px-[1.5vmin] py-[0.6vmin] text-[clamp(1.1rem,3.2vmin,2.75rem)] ${r.is_winner ? "bg-amber-400/20 font-bold text-amber-200" : ""}`}
+                  >
+                    <span className="w-[2.2em] shrink-0 tabular-nums text-slate-400">{r.rank ?? i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate">{r.full_name}</span>
+                    <span className="shrink-0 tabular-nums">
+                      {session.ranking_mode === "lines"
+                        ? `${r.lines} ${r.lines === 1 ? "line" : "lines"}`
+                        : `${r.correct}/24`}
+                    </span>
+                    <span className="w-[3.6em] shrink-0 text-right font-mono tabular-nums text-slate-400">
+                      {formatDuration(r.reach_seconds ?? r.elapsed_seconds)}
+                    </span>
+                  </li>
+                ))}
+                {rows.length === 0 ? <li className="text-slate-400">Waiting for players to join...</li> : null}
+              </ol>
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[3vmin] rounded-3xl bg-slate-900 p-[3vmin] text-center">
+              <div className="grid w-full grid-cols-2 gap-[3vmin]">
+                <PresentStat label="Players" value={rows.length} />
+                <PresentStat label="Squares confirmed" value={rows.reduce((n, r) => n + r.correct, 0)} />
+              </div>
+              <p className="text-[clamp(1.25rem,4vmin,3.5rem)] font-bold text-amber-300">
+                {status === "lobby" ? "Get ready to meet your coworkers!" : "Winners revealed when time is up"}
+              </p>
+            </div>
+          )}
         </section>
       </div>
     </main>
+  );
+}
+
+function PresentStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl bg-slate-800 p-[2vmin]">
+      <p className="font-mono text-[clamp(2.5rem,10vmin,8rem)] font-extrabold leading-none tabular-nums">
+        {value.toLocaleString()}
+      </p>
+      <p className="mt-[1vmin] text-[clamp(1rem,3vmin,2.5rem)] font-semibold text-slate-400">{label}</p>
+    </div>
   );
 }

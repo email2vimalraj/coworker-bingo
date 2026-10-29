@@ -87,6 +87,25 @@ export default function SessionDashboard() {
     }
   }
 
+  // Live Top 10 on the Present screen. Off hides names and scores until the winners reveal.
+  const showOnPresent = session.present_show_leaderboard === true;
+  async function togglePresentLeaderboard() {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const { error: upErr } = await getSupabase()
+        .from("sessions")
+        .update({ present_show_leaderboard: !showOnPresent })
+        .eq("id", id);
+      if (upErr) throw upErr;
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      await reload();
+      setBusy(false);
+    }
+  }
+
   const joined = rows.length;
   const submitted = rows.filter((r) => r.submitted_at).length;
   const squares = rows.reduce((n, r) => n + r.correct, 0);
@@ -231,6 +250,23 @@ export default function SessionDashboard() {
               : "Any email domain can join"}
             {" "}&middot; {session.allow_username_claims === false ? "Squares by code or QR only" : "Squares by code, QR, username or email"}
           </p>
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-3 py-2">
+            <input
+              type="checkbox"
+              className="size-5 shrink-0 accent-indigo-600"
+              checked={showOnPresent}
+              disabled={busy}
+              onChange={() => void togglePresentLeaderboard()}
+            />
+            <span className="text-sm">
+              <span className="font-semibold">Show live Top 10 on the Present screen</span>
+              <span className="block text-slate-500">
+                {showOnPresent
+                  ? "The projector shows names and scores during the game."
+                  : "Hidden: the projector shows only totals until the winners are revealed at the end."}
+              </span>
+            </span>
+          </label>
         </Card>
 
         <Card className="flex flex-col items-center gap-2">
