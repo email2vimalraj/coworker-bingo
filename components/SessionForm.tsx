@@ -133,6 +133,19 @@ export function SessionForm({
     setPasteText("");
   }
 
+  /** Throws away the current list (including the template prompts) and keeps only the pasted ones. */
+  function replaceWithPasted() {
+    const r = appendPrompts([], parsePromptLines(pasteText));
+    setPrompts(r.list);
+    const short = MIN_PROMPTS - r.list.length;
+    setPasteNote(
+      `Replaced the list with ${r.list.length} pasted prompt${r.list.length === 1 ? "" : "s"}` +
+        (r.skipped ? `, skipped ${r.skipped} (duplicate or over ${MAX_PROMPTS})` : "") +
+        (short > 0 ? `. Add ${short} more to reach ${MIN_PROMPTS}.` : "."),
+    );
+    setPasteText("");
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const problems: string[] = [];
@@ -267,6 +280,17 @@ export function SessionForm({
             <Button variant="secondary" onClick={() => setPrompts([...DEFAULT_PROMPTS])}>
               Use whole bank ({DEFAULT_PROMPTS.length})
             </Button>
+            <Button
+              variant="secondary"
+              disabled={prompts.length === 0}
+              onClick={() => {
+                setPrompts([]);
+                setPasteOpen(true);
+                setPasteNote("List cleared. Paste your prompts below, one per line.");
+              }}
+            >
+              Clear all
+            </Button>
           </div>
         </div>
         <p className="text-sm text-slate-600">
@@ -324,9 +348,14 @@ export function SessionForm({
               aria-label="Paste prompts, one per line"
               placeholder={"One prompt per line\nHas a pet\nPlays chess"}
             />
-            <Button variant="secondary" disabled={!pasteText.trim()} onClick={addPasted}>
-              Add pasted prompts
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={!pasteText.trim()} onClick={replaceWithPasted}>
+                Replace all with pasted
+              </Button>
+              <Button variant="secondary" disabled={!pasteText.trim()} onClick={addPasted}>
+                Add to current list
+              </Button>
+            </div>
             {pasteNote ? <p className="text-sm text-slate-600">{pasteNote}</p> : null}
           </div>
         ) : null}
